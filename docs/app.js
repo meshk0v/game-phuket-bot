@@ -57,13 +57,15 @@ function sent(what) {
 /* ---------- Роутер (hash) ---------- */
 const go = (r) => { location.hash = r === 'home' ? '' : r; };
 function route() {
-  const r = location.hash.slice(1) || 'home';
+  const r = location.hash.slice(1) || (localStorage.city ? 'home' : 'city');
   window.scrollTo(0, 0);
   setMain(null);
-  r === 'home' ? tg?.BackButton.hide() : tg?.BackButton.show();
+  ['home', 'city'].includes(r) ? tg?.BackButton.hide() : tg?.BackButton.show();
   const [kind, id] = r.split('-');
   let html = '';
-  if (r === 'home') html = home();
+  if (r === 'city') html = city();
+  else if (r === 'spb') html = spb();
+  else if (r === 'home') html = home();
   else if (kind === 'event' && EVENTS[id]) html = event(id);
   else if (r === 'private-mafia') html = form('Мафия с ведущим', 'Команда организует лучшую Мафию на острове. Профессиональные ведущие, маски, стильные карточки с ролями и весь необходимый атрибут. Можем провести на английском.', 'Дата и количество гостей');
   else if (r === 'private-games') html = form('Игры на мероприятие', 'Организуем развлекательные игры под ключ в любой точке острова.', 'Дата, формат, количество гостей', true);
@@ -76,6 +78,15 @@ function route() {
 window.addEventListener('hashchange', route);
 
 /* ---------- Экраны ---------- */
+function city() {
+  return `<section class="hero"><h1>Привет!<br><span class="red">Где ты сейчас?</span></h1><p>Выбери город — покажем актуальную афишу</p></section>
+  <div class="grid" style="margin-top:20px"><div class="tile red" data-city="phuket"><span class="h">Пхукет</span><small>афиша, игры, события</small></div>
+  <div class="tile" data-city="spb"><span class="h">Санкт-Петербург</span><small>скоро</small></div></div>`;
+}
+function spb() {
+  return `<h1>Санкт-Петербург<br><span class="red">скоро</span></h1><p class="mute">Мы ещё готовим игры в вашем городе. Следите за новостями в Instagram.</p>
+  <button class="btn ghost" data-ig>Instagram @game.phuket</button><button class="btn ghost" data-city="phuket">Перейти к Пхукету</button>`;
+}
 function home() {
   return `
   <section class="hero">
@@ -128,6 +139,10 @@ function form(title, text, ph, games) {
 function eventCTA(id) { return () => sent(`${EVENTS[id].day} — ${EVENTS[id].name}`); }
 
 function bind(r) {
+  view.querySelectorAll('[data-city]').forEach((el) => el.addEventListener('click', () => {
+    haptic();
+    if (el.dataset.city === 'phuket') { localStorage.city = 'phuket'; go('home'); if (!location.hash) route(); } else go('spb');
+  }));
   view.querySelectorAll('[data-go]').forEach((el) => el.addEventListener('click', () => {
     haptic();
     const t = el.dataset.go;
