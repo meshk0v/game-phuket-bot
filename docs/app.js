@@ -80,14 +80,11 @@ const hapticSel = () => tg?.HapticFeedback?.selectionChanged();
 const notify = (t) => tg?.HapticFeedback?.notificationOccurred(t);
 let toastT;
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2200); }
+// Выбранный город храним только в localStorage (на этом устройстве)
+const CITY_KEY = 'gp_city';
 const store = {
-  get: (k) => new Promise((res) => {
-    const local = localStorage[k] || '';
-    if (!(inTG && tg.CloudStorage && tg.isVersionAtLeast?.('6.9'))) return res(local);
-    setTimeout(() => res(local), 1200); // не ждём бесконечно, если Telegram не ответил
-    try { tg.CloudStorage.getItem(k, (e, v) => res(v || local)); } catch { res(local); }
-  }),
-  set: (k, v) => { localStorage[k] = v; if (inTG && tg.CloudStorage) tg.CloudStorage.setItem(k, v); },
+  get: (k) => { try { return localStorage[k] || ''; } catch { return ''; } },
+  set: (k, v) => { try { v ? (localStorage[k] = v) : localStorage.removeItem(k); } catch {} },
 };
 function openLink(u) { inTG ? tg.openLink(u) : window.open(u, '_blank'); }
 
@@ -114,8 +111,11 @@ function done(title, msg, after) {
   else { toast(title + ' ✓'); setTimeout(fin, 900); }
 }
 
+function resetCity() { haptic(); city = ''; store.set(CITY_KEY, ''); go('city'); }
+
 /* ---------------- роутер ---------------- */
 let city = '';
+const home = () => (city === 'spb' ? 'spb' : city ? 'afisha' : 'city');
 const go = (r) => { if (location.hash.slice(1) === r) route(); else location.hash = r; };
 const TABS = ['afisha', 'games', 'order', 'club'];
 const stack = []; let cur = null, goingBack = false;
@@ -123,16 +123,17 @@ function back() {
   haptic();
   goingBack = true;
   let p = stack.pop();
-  if (!p) p = city ? 'afisha' : 'city';
+  if (!p) p = home();
   go(p);
 }
 function route() {
   const SCREENS = { city: City, spb: Spb, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, ask: Ask, coop: Coop };
   let full = location.hash.slice(1);
   // Telegram дописывает в адрес #tgWebAppData=… — это не экран; неизвестные адреса тоже ведём на стартовый
-  if (!SCREENS[full.split('/')[0]]) full = city ? 'afisha' : 'city';
+  if (!SCREENS[full.split('/')[0]]) full = home();
   const [r, arg] = full.split('/');
-  if (TABS.includes(r) || r === 'city') stack.length = 0; // вкладки — корневые экраны
+  const root = TABS.includes(r) || r === 'city' || (r === 'spb' && city === 'spb');
+  if (root) stack.length = 0; // вкладки — корневые экраны
   else if (!goingBack && cur && cur !== full) stack.push(cur);
   goingBack = false; cur = full;
   mainButton(null);
@@ -140,9 +141,9 @@ function route() {
   document.body.classList.toggle('notabs', !isTab);
   $('#tabs').style.display = r === 'city' || r === 'spb' ? 'none' : '';
   $$('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === r));
-  if (inTG) (isTab || r === 'city') ? tg.BackButton.hide() : tg.BackButton.show();
+  if (inTG) root ? tg.BackButton.hide() : tg.BackButton.show();
   const screen = SCREENS[r];
-  const backBtn = !inTG && !isTab && r !== 'city' ? '<button class="backb" id="backb">← Назад</button>' : '';
+  const backBtn = !inTG && !root ? '<button class="backb" id="backb">← Назад</button>' : '';
   app.innerHTML = `${backBtn}<div class="view">${screen.html(arg)}</div>`;
   $('#backb')?.addEventListener('click', back);
   window.scrollTo(0, 0);
@@ -172,7 +173,8 @@ const City = {
   </section>`,
   bind: () => $$('[data-city]').forEach((b) => b.addEventListener('click', () => {
     haptic('medium');
-    if (b.dataset.city === 'phuket') { city = 'phuket'; store.set('city', city); go('afisha'); } else go('spb');
+    city = b.dataset.city; store.set(CITY_KEY, city);
+    go(city === 'phuket' ? 'afisha' : 'spb');
   })),
 };
 
@@ -188,8 +190,9 @@ const Spb = {
     </div>
   </section>
   <button class="btn white" data-ig>Следить в Instagram</button>
-  <button class="btn ghost" style="margin-top:8px" data-city="phuket">Смотреть афишу Пхукета</button>`,
-  bind: () => { City.bind(); $('[data-ig]').onclick = () => openLink('https://instagram.com/game.phuket'); },
+  <button class="btn ghost" style="margin-top:8px" data-city="phuket">Смотреть афишу Пхукета</button>
+  <button class="btn ghost" style="margin-top:8px;border:0;color:var(--mute)" data-reset>Сменить город</button>`,
+  bind: () => { City.bind(); $('[data-ig]').onclick = () => openLink('https://instagram.com/game.phuket'); $('[data-reset]').onclick = resetCity; },
 };
 
 let selDay = null;
@@ -380,7 +383,7 @@ const Club = {
   <p class="cap" style="text-align:center;margin-top:30px">${sparks()}</p>`,
   bind: () => {
     $('[data-ig]').onclick = () => openLink('https://instagram.com/game.phuket');
-    $('[data-city=reset]').onclick = () => { haptic(); city = ''; store.set('city', ''); go('city'); };
+    $('[data-city=reset]').onclick = resetCity;
   },
 };
 
@@ -426,6 +429,7 @@ function tgUser(k) {
   }
   // убираем служебный #tgWebAppData=… из адреса (telegram-web-app.js уже прочитал его при загрузке)
   if (/tgWebApp/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
-  city = await store.get('city');
+  city = store.get(CITY_KEY);
+  if (inTG && tg.CloudStorage && tg.isVersionAtLeast?.('6.9')) try { tg.CloudStorage.removeItem('city'); } catch {} // старое облачное сохранение
   route();
 })();
