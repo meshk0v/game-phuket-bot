@@ -88,7 +88,6 @@ function openLink(u) { inTG ? tg.openLink(u) : window.open(u, '_blank'); }
 
 let mainFn = null;
 function mainButton(text, fn) {
-  document.body.classList.toggle('notabs', !!text);
   $('#fbtn')?.remove();
   if (inTG) {
     if (mainFn) tg.MainButton.offClick(mainFn);
@@ -117,6 +116,7 @@ function route() {
   const [r, arg] = (location.hash.slice(1) || (city ? 'afisha' : 'city')).split('/');
   mainButton(null);
   const isTab = TABS.includes(r);
+  document.body.classList.toggle('notabs', !isTab);
   $('#tabs').style.display = r === 'city' || r === 'spb' ? 'none' : '';
   $$('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === r));
   if (inTG) (isTab || r === 'city') ? tg.BackButton.hide() : tg.BackButton.show();
