@@ -407,6 +407,11 @@ function tgUser(k) {
 (async () => {
   if (tg) {
     tg.ready(); tg.expand();
+    // Полноэкранный режим (Bot API 8.0+): на телефонах прячет шапку Telegram.
+    // Отступы сверху берутся из --tg-safe-area / --tg-content-safe-area (кнопки «Закрыть» и «⋯» поверх контента).
+    if (tg.isVersionAtLeast?.('8.0') && /^(ios|android|android_x)$/.test(tg.platform) && !tg.isFullscreen) {
+      try { tg.requestFullscreen(); } catch {}
+    }
     tg.setHeaderColor?.('#000000'); tg.setBackgroundColor?.('#000000'); tg.setBottomBarColor?.('#000000');
     tg.disableVerticalSwipes?.();
     tg.BackButton.onClick(back);
