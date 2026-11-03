@@ -184,7 +184,8 @@ body.notabs .tabs{display:none}
 body:not(.notabs) .fixed{bottom:calc(var(--bot) + 84px)}
 body:not(.notabs) #app{padding-bottom:calc(var(--bot) + 170px)}
 
-.toast{position:fixed;left:50%;bottom:calc(var(--bot) + 96px);transform:translate(-50%,16px);background:#fff;color:#000;padding:11px 18px;border-radius:99px;font-weight:600;font-size:14px;opacity:0;transition:.25s;pointer-events:none;z-index:30;white-space:nowrap}
+.backb{display:inline-flex;align-items:center;gap:6px;margin-bottom:14px;padding:8px 14px 8px 10px;border:1px solid var(--line2);border-radius:99px;font-size:13px;font-weight:500;color:#ddd}
+.toast{position:fixed;left:50%;bottom:calc(var(--bot) + 160px);transform:translate(-50%,16px);background:#fff;color:#000;padding:11px 18px;border-radius:99px;font-weight:600;font-size:14px;opacity:0;transition:.25s;pointer-events:none;z-index:30;white-space:nowrap}
 .toast.on{opacity:1;transform:translate(-50%,0)}
 
 .view>*{animation:up .45s cubic-bezier(.2,.8,.2,1) both}

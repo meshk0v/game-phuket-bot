@@ -102,18 +102,31 @@ function mainButton(text, fn) {
     document.body.append(b);
   }
 }
-function done(title, msg) {
+function done(title, msg, after) {
   notify('success');
-  if (inTG && tg.showPopup) tg.showPopup({ title, message: msg + '\n\nДемо-режим: заявка не отправляется.', buttons: [{ type: 'ok' }] });
-  else toast(title + ' ✓');
+  const fin = after || back; // формы-вкладки остаются на месте, остальные экраны — назад
+  if (inTG && tg.showPopup) tg.showPopup({ title, message: msg + '\n\nДемо-режим: заявка не отправляется.', buttons: [{ type: 'ok' }] }, fin);
+  else { toast(title + ' ✓'); setTimeout(fin, 900); }
 }
 
 /* ---------------- роутер ---------------- */
 let city = '';
 const go = (r) => { if (location.hash.slice(1) === r) route(); else location.hash = r; };
 const TABS = ['afisha', 'games', 'order', 'club'];
+const stack = []; let cur = null, goingBack = false;
+function back() {
+  haptic();
+  goingBack = true;
+  let p = stack.pop();
+  if (!p) p = city ? 'afisha' : 'city';
+  go(p);
+}
 function route() {
-  const [r, arg] = (location.hash.slice(1) || (city ? 'afisha' : 'city')).split('/');
+  const full = location.hash.slice(1) || (city ? 'afisha' : 'city');
+  const [r, arg] = full.split('/');
+  if (TABS.includes(r) || r === 'city') stack.length = 0; // вкладки — корневые экраны
+  else if (!goingBack && cur && cur !== full) stack.push(cur);
+  goingBack = false; cur = full;
   mainButton(null);
   const isTab = TABS.includes(r);
   document.body.classList.toggle('notabs', !isTab);
@@ -121,7 +134,9 @@ function route() {
   $$('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === r));
   if (inTG) (isTab || r === 'city') ? tg.BackButton.hide() : tg.BackButton.show();
   const screen = { city: City, spb: Spb, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, ask: Ask, coop: Coop }[r] || Afisha;
-  app.innerHTML = `<div class="view">${screen.html(arg)}</div>`;
+  const backBtn = !inTG && !isTab && r !== 'city' ? '<button class="backb" id="backb">← Назад</button>' : '';
+  app.innerHTML = `${backBtn}<div class="view">${screen.html(arg)}</div>`;
+  $('#backb')?.addEventListener('click', back);
   window.scrollTo(0, 0);
   screen.bind?.(arg);
   $$('[data-go]').forEach((el) => el.addEventListener('click', () => { haptic(); go(el.dataset.go); }));
@@ -297,7 +312,7 @@ const Games = {
   bind: () => $$('.role').forEach((r) => r.addEventListener('click', () => { haptic('medium'); r.classList.toggle('flip'); })),
 };
 
-const order = { fmts: new Set(['Мафия']), guests: 15, lang: 'RU' };
+const order = { fmts: new Set(['Мафия']), guests: 15, lang: 'RU', date: '', contact: '', note: '' };
 const Order = {
   html: () => `
   ${header()}
@@ -310,9 +325,9 @@ const Order = {
   <div class="field"><label>Гостей<b id="gv">${order.guests}</b></label><input type="range" id="guests" min="5" max="60" step="1" value="${order.guests}"></div>
   <div class="field"><label>Язык игры</label><div class="seg">${['RU', 'EN'].map((l) => `<button data-l="${l}" class="${order.lang === l ? 'on' : ''}">${l === 'RU' ? 'Русский' : 'English'}</button>`).join('')}</div></div>
   <div class="field"><label>Дата и контакты</label>
-    <input class="inp" type="date" id="odate">
-    <input class="inp" id="ocontact" placeholder="Телефон или @username" value="${tgUser('contact')}">
-    <textarea class="inp" id="onote" placeholder="Пару слов о мероприятии"></textarea></div>`,
+    <input class="inp" type="date" id="odate" value="${order.date}">
+    <input class="inp" id="ocontact" placeholder="Телефон или @username" value="${esc(order.contact || tgUser('contact'))}">
+    <textarea class="inp" id="onote" placeholder="Пару слов о мероприятии">${esc(order.note)}</textarea></div>`,
   bind: () => {
     const fc = () => { $('#fcount').textContent = order.fmts.size ? `${order.fmts.size} выбрано` : ''; };
     fc();
@@ -327,10 +342,11 @@ const Order = {
     g.addEventListener('input', () => { order.guests = +g.value; paint(); if (g.value % 5 === 0) hapticSel(); });
     $$('[data-l]').forEach((b) => b.addEventListener('click', () => { hapticSel(); order.lang = b.dataset.l; $$('[data-l]').forEach((x) => x.classList.toggle('on', x === b)); }));
     $('#odate').min = new Date().toISOString().slice(0, 10);
+    [['odate', 'date'], ['ocontact', 'contact'], ['onote', 'note']].forEach(([id, k]) => $('#' + id).addEventListener('input', (e) => (order[k] = e.target.value)));
     mainButton('Отправить заявку', () => {
       if (!order.fmts.size) { notify('error'); return toast('Выберите хотя бы одну игру'); }
       if (!$('#ocontact').value.trim()) { notify('error'); $('#ocontact').focus(); return toast('Оставьте контакт для связи'); }
-      done('Заявка принята', `${[...order.fmts].join(', ')} · ${order.guests} гостей · ${order.lang}. Менеджер свяжется с вами в ближайшее время.`);
+      done('Заявка принята', `${[...order.fmts].join(', ')} · ${order.guests} гостей · ${order.lang}. Менеджер свяжется с вами в ближайшее время.`, () => { order.date = order.note = ''; route(); });
     });
   },
 };
@@ -380,6 +396,7 @@ function formScreen(cap, title, red, lead, ph, ok) {
 const Ask = formScreen('Есть вопрос?', 'Напишите', 'нам', 'Про игры, запись или частное мероприятие — ответим лично.', 'Ваш вопрос', 'Менеджер ответит вам в ближайшее время.');
 const Coop = formScreen('Для площадок и брендов', 'Давайте', 'дружить', 'Мы организуем и проводим развлекательные игры на острове и всегда открыты к взаимовыгодному сотрудничеству.', 'Как вы видите наше сотрудничество?', 'Менеджер свяжется с вами и договорится о встрече.');
 
+const esc = (s = '') => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 function tgUser(k) {
   const u = tg?.initDataUnsafe?.user;
   if (!u) return '';
@@ -392,7 +409,7 @@ function tgUser(k) {
     tg.ready(); tg.expand();
     tg.setHeaderColor?.('#000000'); tg.setBackgroundColor?.('#000000'); tg.setBottomBarColor?.('#000000');
     tg.disableVerticalSwipes?.();
-    tg.BackButton.onClick(() => { haptic(); history.length > 1 ? history.back() : go('afisha'); });
+    tg.BackButton.onClick(back);
   }
   city = await store.get('city');
   route();
