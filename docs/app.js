@@ -37,13 +37,71 @@ EVENTS.sort((a, b) => a.ts - b.ts);
 const fmtDate = (e) => `${e.date.getUTCDate()} ${MON[e.date.getUTCMonth()]}`;
 const priceTxt = (p) => (p === 0 ? 'Бесплатно' : p ? `${p} ฿` : 'Уточняйте');
 
+// Тексты ролей и правил — из сторис Game Phuket «Роли в мафии»
 const ROLES = [
-  { n: 'Мирный', team: 'Город', t: 'Днём ищет мафию в разговорах и голосует. Ночью спит. Главное оружие — логика и внимание.' },
-  { n: 'Мафия', team: 'Мафия', m: 1, t: 'Ночью вместе с напарниками выбирает жертву. Днём притворяется мирным и уводит подозрения.' },
-  { n: 'Дон', team: 'Мафия', m: 1, t: 'Глава мафии. Ночью ищет шерифа, чтобы убрать самого опасного игрока города.' },
-  { n: 'Шериф', team: 'Город', t: 'Каждую ночь проверяет одного игрока. Должен донести правду до города и не раскрыться раньше времени.' },
-  { n: 'Доктор', team: 'Город', t: 'Ночью лечит одного игрока. Если угадал, кого выбрала мафия, — спасает ему жизнь.' },
+  { id: 'civ', n: 'Мирный', side: 'red', team: 'Красный · мирный город', ico: 'cap',
+    t: ['Твоя задача — вычислить мафию по словам и поведению и убедить стол голосовать правильно.', 'Мирные выигрывают, когда думают сообща.'],
+    tip: 'Слушай. Анализируй. Вычисли мафию.' },
+  { id: 'maf', n: 'Мафия', side: 'black', team: 'Чёрный · мафия', ico: 'gang',
+    t: ['Ночью ты в деле, днём — мирный.', 'Твоя сила в том, что мафия знает друг друга, а город — нет.', 'Задача проста и сложна одновременно: убирать мирных и не попасться, когда весь стол ищет виноватого.'],
+    tip: 'Будь убедительным. Не вызывай подозрений.' },
+  { id: 'don', n: 'Дон мафии', side: 'black', team: 'Мафия', ico: 'don',
+    t: ['Имеет решающий голос: если Мафия не может определиться, кого убивать, решает Дон.', 'Просыпается отдельно, чтобы найти Шерифа, — проверяет игроков ночью. Если он нашёл Шерифа, ведущий покажет знак 👌.'],
+    tip: 'Каждую ночь ищешь Шерифа отдельно от остальных.' },
+  { id: 'sher', n: 'Шериф', side: 'red', team: 'Красный · мирный город', ico: 'sheriff',
+    t: ['Ночью ты проверяешь игрока и узнаёшь правду: свой он или мафия.', '👍 Большой палец вверх — это мирный, оборотень до перевоплощения и хитман (Хитман всегда показывается шерифу красным).', '👎 Большой палец вниз — это мафия, Дон мафии или оборотень после перевоплощения.'],
+    tip: 'Узнай правду. Дождись момента. Назови мафию.' },
+  { id: 'doc', n: 'Доктор', side: 'red', team: 'Красный · мирный город', ico: 'doctor',
+    t: ['Каждую ночь выбирает одного игрока для лечения.', 'Может лечить себя один раз за всю игру, не может лечить одного и того же игрока два раза подряд.'],
+    tip: 'Не спасает от двух убийств (если в одного и того же игрока стреляли и мафия, и хитман).' },
+  { id: 'det', n: 'Детектив', side: 'red', team: 'Красный · мирный город', ico: 'detective',
+    t: ['Каждую ночь проверяет одного игрока на наличие роли.', '👍 Большой палец вверх — это обычный Мирный житель без роли.', '👉 Большой палец вбок — у игрока любая активная роль, как положительная, так и отрицательная.'],
+    tip: 'Детектив — единственный, кто своей проверкой может найти Хитмана.' },
+  { id: 'put', n: 'Путана', side: '', team: 'Активная роль', ico: 'hair',
+    t: ['Выбирает игрока, которого «забирает к себе домой», тем самым спасает его от смерти.', 'Если в эту ночь был произведён выстрел в Путану, умирают и Путана, и тот игрок, который находился у неё.'],
+    tip: 'Не светись. Спасая другого, рискуешь собой.' },
+  { id: 'hit', n: 'Хитман', side: 'black', team: 'Чёрный · сам за себя', ico: 'hitman',
+    t: ['Играет сам за себя, убивает по ночам, может убить Мафию.', 'Должен остаться один на один с любым из игроков.'],
+    tip: 'Подсказка: Хитману выгоднее искать и убивать мафию вместе с мирным городом, чтобы мафия ночью не убила его.' },
+  { id: 'wolf', n: 'Оборотень', side: 'red', team: 'Красный, пока не обернулся', ico: 'wolf',
+    t: ['Изначально играет за мирный город и не знаком с мафией, но каждую ночь просыпается отдельно от всех.', 'В ту ночь, когда ведущий покажет ему 👎 большой палец вниз, он перевоплощается в Мафию — с этого момента просыпается вместе с ней и совершает убийства.'],
+    tip: 'Будь готов к перемене в любую ночь.' },
 ];
+const GESTURES = [
+  ['👍', 'Большой палец вверх', 'Шерифу — «красный» игрок. Детективу — мирный без роли. Оборотню — ещё не обращается.'],
+  ['👎', 'Большой палец вниз', 'Шерифу — мафия, Дон или обернувшийся оборотень. Оборотню — становится Мафией.'],
+  ['👉', 'Большой палец вбок', 'Для Детектива: у игрока есть активная роль.'],
+  ['👌', 'Знак «ок»', 'Для Дона: он нашёл Шерифа.'],
+];
+const RULES = [
+  'Не показывайте свою карту с ролью другим игрокам и не обсуждайте её внешний вид, даже если вы выбыли из игры.',
+  'Говорить можете всё, что угодно. Карточку вы смотрите только один раз за игру.',
+  'Во время ночной фазы все игроки молчат, запрещены любые жесты, пока на вашем лице есть маска.',
+  'Мёртвые игроки молчат и игнорируют любые вопросы.',
+  'Всё, что происходит в игре, остаётся в игре. Клятвы и обещания будут наказаны страйком.',
+  'Во время ночной фазы озвучиваются все роли, независимо от того, выбыл ли персонаж из игры или остался в ней.',
+];
+const STRIKES = [
+  ['Предупредительный', ''],
+  ['Без голоса', 'Игрок лишается права голоса на ближайшем голосовании.'],
+  ['Молчание', 'Игрок не может общаться с игроками, пока не решит головоломку от ведущего.'],
+  ['Удаление', 'Удаление с игры.'],
+];
+
+// Красные силуэты ролей (в стиле карточек из сторис)
+const BODY = '<circle cx="50" cy="44" r="16"/><path d="M14 100c0-22 15-33 36-33s36 11 36 33z"/>';
+const ICONS = {
+  cap: `${BODY}<path d="M32 38q1-19 18-19t18 19z"/><path d="M29 38h44q-2 6-11 6H35q-6 0-6-6z"/>`,
+  gang: `<g opacity=".75" transform="translate(-24 10) scale(.8)">${BODY}<path d="M30 33l3-17q17-7 34 0l3 17z"/><ellipse cx="50" cy="33" rx="29" ry="5"/></g><g opacity=".75" transform="translate(44 10) scale(.8)">${BODY}<path d="M30 33l3-17q17-7 34 0l3 17z"/><ellipse cx="50" cy="33" rx="29" ry="5"/></g>${BODY}<path d="M30 33l3-17q17-7 34 0l3 17z"/><ellipse cx="50" cy="33" rx="29" ry="5"/><path d="M50 68l-4 6 4 24 4-24z" fill="#000"/>`,
+  don: `${BODY}<path d="M30 33l3-17q17-7 34 0l3 17z"/><ellipse cx="50" cy="33" rx="30" ry="5"/><path d="M36 67l14 14 14-14" fill="none" stroke="#000" stroke-width="3"/><path d="M50 70l-4 6 4 22 4-22z" fill="#000"/>`,
+  sheriff: `${BODY}<path d="M16 33q34 10 68 0-4 8-34 9-30-1-34-9z"/><path d="M35 34q-2-19 8-19l7 6 7-6q10 0 8 19z"/><path d="M62 78l2.5 5 5.5.8-4 3.9 1 5.5-5-2.6-5 2.6 1-5.5-4-3.9 5.5-.8z" fill="#000"/>`,
+  doctor: `${BODY}<circle cx="50" cy="31" r="7" fill="#000"/><circle cx="50" cy="31" r="3.5"/><path d="M57 80h10M62 75v10" stroke="#000" stroke-width="3.5"/><path d="M38 68q-4 16 6 20" fill="none" stroke="#000" stroke-width="2"/>`,
+  detective: `${BODY}<path d="M31 38q0-21 19-21t19 21z"/><path d="M28 38h46q-3 5-10 5H34q-5 0-6-5z"/><circle cx="20" cy="62" r="11" fill="none" stroke="currentColor" stroke-width="4"/><path d="M27 70l9 12" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>`,
+  hair: `<path d="M29 46q-2-27 21-27t21 27q4 24-8 28H37q-12-4-8-28z"/>${BODY}<path d="M38 72q12 8 24 0" fill="none" stroke="#000" stroke-width="2"/>`,
+  hitman: `${BODY}<path d="M30 33l3-17q17-7 34 0l3 17z"/><ellipse cx="50" cy="33" rx="29" ry="5"/><path d="M50 68l-4 6 4 24 4-24z" fill="#000"/><path d="M6 60h7v-6h4v6h3v8h-5l-2 22H6z"/>`,
+  wolf: `${BODY}<path d="M35 34l-5-22 13 13zM65 34l5-22-13 13z"/><path d="M42 47l4 3M58 47l-4 3" stroke="#000" stroke-width="2.5"/>`,
+};
+const roleIcon = (r, cls = '') => `<svg class="ricon ${cls}" viewBox="0 0 100 100" fill="currentColor">${ICONS[r.ico]}</svg>`;
 const FORMATS = [
   { n: 'Мафия', s: 'Классика, квиз-мафия, на английском' },
   { n: 'Бункер', s: 'Классический или на английском' },
@@ -136,6 +194,7 @@ const TABS = ['afisha', 'games', 'order', 'club'];
 const stack = []; let cur = null, goingBack = false;
 function back() {
   haptic();
+  if (sheetClose) return sheetClose();
   goingBack = true;
   let p = stack.pop();
   if (!p) p = home();
@@ -151,6 +210,7 @@ function route() {
   if (root) stack.length = 0; // вкладки — корневые экраны
   else if (!goingBack && cur && cur !== full) stack.push(cur);
   goingBack = false; cur = full;
+  sheetClose?.(true);
   mainButton(null);
   const isTab = TABS.includes(r);
   document.body.classList.toggle('notabs', !isTab);
@@ -311,15 +371,60 @@ const EventPage = {
 const Games = {
   html: () => `
   ${header()}
-  <p class="cap">Перед первой игрой</p>
-  <h1 class="d big" style="margin-top:10px">Роли в<br><span class="red">мафии</span></h1>
-  <p class="lead" style="margin-top:12px">Нажми на карту — узнаешь роль. Всё, что нужно знать перед игрой.</p>
-  <div class="roles">${ROLES.map((r) => `
-    <div class="role"><div class="in">
-      <div class="f"><span class="cap">Твоя роль</span><div class="q">?</div><span class="cap" style="text-align:center">нажми, чтобы открыть</span></div>
-      <div class="b ${r.m ? 'mafia' : ''}"><span class="team ${r.m ? 'red' : 'mute'}">Команда: ${r.team}</span><div><h4 class="d">${r.n}</h4><p style="margin-top:10px">${r.t}</p></div><span class="${r.m ? 'red' : ''}">${SPARK}</span></div>
-    </div></div>`).join('')}
-  </div>
+  <p class="cap">Всё, что нужно знать перед игрой</p>
+  <h1 class="d big" style="margin-top:10px">Правила<br><span class="red">мафии</span></h1>
+  <nav class="subnav" id="subnav">
+    ${[['goal', 'Цель'], ['flow', 'Ход игры'], ['roles', 'Роли'], ['gest', 'Жесты'], ['rules', 'Важно'], ['strike', 'Страйки']]
+      .map(([id, t], i) => `<button data-to="${id}" class="${i ? '' : 'on'}">${t}</button>`).join('')}
+  </nav>
+
+  <section id="goal" class="anchor">
+    <div class="sec"><h3 class="d">Цель <span class="red">игры</span></h3></div>
+    <div class="teams">
+      <div class="team-c black"><span class="cap red">Мафия</span><b class="d">Знают друг друга</b><p>Устраняют игроков по ночам. Побеждают, если остаются в большинстве либо при равном количестве Мирных и Мафии.</p></div>
+      <div class="team-c"><span class="cap">Мирные жители</span><b class="d">Не знают никого</b><p>Пытаются вычислить Мафию. Побеждают, если устраняют всех мафиози.</p></div>
+    </div>
+  </section>
+
+  <section id="flow" class="anchor">
+    <div class="sec"><h3 class="d">Как проходит <span class="red">мафия</span></h3></div>
+    <div class="steps">
+      ${[['Распределение ролей', 'Ведущий тайно распределяет карты.'], ['Фаза ночи', 'Действуют все особые игровые роли.'], ['Фаза дня', 'Обсуждение и голосование против игрока.'], ['Условия победы', 'Мафия — при равенстве или превосходстве, мирные — при ликвидации мафии.']]
+        .map(([t, d], i) => `<div class="step"><span class="n">${i + 1}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('')}
+    </div>
+  </section>
+
+  <section id="roles" class="anchor">
+    <div class="sec"><h3 class="d">Роли</h3><span class="cap">${ROLES.length} ролей</span></div>
+    <p class="mute" style="font-size:13px;margin:-4px 0 14px">Добавляются по мере увеличения игроков. Нажми на карту.</p>
+    <div class="rgrid">${ROLES.map((r) => `
+      <button class="rcard" data-role="${r.id}">${roleIcon(r)}<span>${r.n}</span></button>`).join('')}
+    </div>
+    <div class="jargon">
+      <div><i class="dot r"></i><div><b>Красные игроки</b><p>Роли мирного города: Мирный, Шериф, Доктор, Детектив, Оборотень — пока не обернулся.</p></div></div>
+      <div><i class="dot b"></i><div><b>Чёрные игроки</b><p>Роли с возможностью выстрела: Мафия, Хитман.</p></div></div>
+    </div>
+  </section>
+
+  <section id="gest" class="anchor">
+    <div class="sec"><h3 class="d">Жесты <span class="red">ведущего</span></h3></div>
+    <p class="mute" style="font-size:13px;margin:-4px 0 12px">Ночью ведущий показывает результаты проверок жестами.</p>
+    <div class="gest">${GESTURES.map(([e, t, d]) => `<div><span class="em">${e}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('')}</div>
+  </section>
+
+  <section id="rules" class="anchor">
+    <div class="sec"><h3 class="d red">Важно!</h3></div>
+    <ol class="rules">${RULES.map((r) => `<li>${r}</li>`).join('')}</ol>
+  </section>
+
+  <section id="strike" class="anchor">
+    <div class="sec"><h3 class="d">Страйки</h3></div>
+    <p class="mute" style="font-size:13px;margin:-4px 0 14px">Система штрафов, когда игрок нарушает правила игры или мешает игрокам.</p>
+    <div class="strikes">${STRIKES.map(([t, d], i) => `
+      <button class="strk" style="--k:${(i + 1) / 4}"><span class="lvl">${i + 1}</span><div><b>${t}</b>${d ? `<p>${d}</p>` : ''}</div></button>`).join('')}
+    </div>
+  </section>
+
   <div class="sec"><h3 class="d">3 способа вычислить <span class="red">мафию</span></h3></div>
   <div class="tips">
     <div class="tip"><span class="n">1</span><div><b>Следи за реакциями</b><p>Мимика и жесты говорят больше слов.</p></div></div>
@@ -327,16 +432,70 @@ const Games = {
     <div class="tip"><span class="n">3</span><div><b>Сравнивай поведение</b><p>Слова могут меняться, поведение — реже.</p></div></div>
   </div>
   <p class="cap" style="margin-top:14px"><span class="dash"></span>&nbsp; Это умеет каждый, даже на первой игре</p>
-  <div class="sec"><h3 class="d">Вопросы</h3></div>
-  <div class="faq">
-    <details><summary>Я никогда не играл. Нужно готовиться?</summary><p>Нет. Ведущий объяснит правила перед игрой, а первые раунды помогут освоиться.</p></details>
-    <details><summary>Как играть, если я не умею врать?</summary><p>Мирным жителям врать не нужно, а мафии помогает логика, а не актёрство. Многие лучшие игроки — честные люди.</p></details>
-    <details><summary>Можно прийти одному?</summary><p>Да, большинство приходит одни — за столом быстро знакомятся.</p></details>
-    <details><summary>Игры проходят на русском?</summary><p>Еженедельные игры — на русском. Частные игры можем провести на английском.</p></details>
-  </div>
-  <button class="btn" style="margin-top:24px" data-go="afisha">Выбрать игру в афише</button>`,
-  bind: () => $$('.role').forEach((r) => r.addEventListener('click', () => { haptic('medium'); r.classList.toggle('flip'); })),
+  <button class="btn" style="margin-top:26px" data-go="afisha">Выбрать игру в афише</button>`,
+  bind: () => {
+    $$('[data-role]').forEach((b) => b.addEventListener('click', () => { haptic('medium'); openRole(b.dataset.role); }));
+    $$('[data-to]').forEach((b) => b.addEventListener('click', () => {
+      hapticSel();
+      $('#' + b.dataset.to).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
+    // подсветка текущего раздела в подменю
+    const btns = $$('[data-to]');
+    const io = new IntersectionObserver((es) => es.forEach((e) => {
+      if (!e.isIntersecting) return;
+      btns.forEach((b) => b.classList.toggle('on', b.dataset.to === e.target.id));
+      $(`[data-to="${e.target.id}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    }), { rootMargin: '-30% 0px -60% 0px' });
+    $$('.anchor').forEach((s) => io.observe(s));
+  },
 };
+
+// Карточка роли — выезжающая снизу панель
+let sheetClose = null;
+function openRole(id) {
+  const i = ROLES.findIndex((r) => r.id === id);
+  const r = ROLES[i];
+  const el = document.createElement('div');
+  el.className = 'sheet-wrap';
+  el.innerHTML = `
+    <div class="sheet" role="dialog">
+      <i class="grab"></i><button class="x" aria-label="Закрыть">✕</button>
+      <div class="role-h"><span class="cap ${r.side === 'black' ? 'red' : ''}">${r.team}</span><h2 class="d">Роль: <span class="red">${r.n}</span></h2></div>
+      <div class="role-b">
+        <div class="frame">${roleIcon(r, 'big')}</div>
+        <div class="role-t">${r.t.map((p) => `<p>${p}</p>`).join('')}</div>
+      </div>
+      <p class="role-tip">${r.tip}</p>
+      <div class="role-nav">
+        <button data-nav="-1" ${i ? '' : 'disabled'}>← ${ROLES[i - 1]?.n || ''}</button>
+        <button data-nav="1" ${ROLES[i + 1] ? '' : 'disabled'}>${ROLES[i + 1]?.n || ''} →</button>
+      </div>
+    </div>`;
+  document.body.append(el);
+  requestAnimationFrame(() => el.classList.add('on'));
+  const close = (instant) => {
+    sheetClose = null;
+    if (instant) return el.remove();
+    el.classList.remove('on'); setTimeout(() => el.remove(), 300);
+    if (inTG && TABS.includes(cur.split('/')[0])) tg.BackButton.hide();
+  };
+  sheetClose = close;
+  if (inTG) tg.BackButton.show();
+  el.addEventListener('click', (e) => { if (e.target === el) { haptic(); close(); } });
+  $('.x', el).addEventListener('click', () => { haptic(); close(); });
+  $$('[data-nav]', el).forEach((b) => b.addEventListener('click', () => {
+    const next = ROLES[i + +b.dataset.nav]; if (!next) return;
+    hapticSel(); close(true); openRole(next.id); $('.sheet-wrap').classList.add('on', 'noanim');
+  }));
+  // свайп вниз — закрыть
+  const sh = $('.sheet', el); let y0 = null;
+  sh.addEventListener('touchstart', (e) => { if (sh.scrollTop <= 0) y0 = e.touches[0].clientY; }, { passive: true });
+  sh.addEventListener('touchmove', (e) => { if (y0 === null) return; const dy = Math.max(0, e.touches[0].clientY - y0); sh.style.transform = `translateY(${dy}px)`; }, { passive: true });
+  sh.addEventListener('touchend', (e) => {
+    if (y0 === null) return; const dy = e.changedTouches[0].clientY - y0; y0 = null; sh.style.transform = '';
+    if (dy > 90) { haptic(); close(); }
+  });
+}
 
 const order = { fmts: new Set(['Мафия']), guests: 15, lang: 'RU', date: '', contact: '', note: '' };
 const Order = {

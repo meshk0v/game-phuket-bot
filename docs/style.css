@@ -103,19 +103,6 @@ body.notabs #app{padding-bottom:calc(var(--bot) + 110px)}
 
 /* ---------- game tab ---------- */
 .big{font-size:56px}
-.roles{display:flex;gap:12px;overflow-x:auto;margin:18px -18px 0;padding:0 18px 6px;scroll-snap-type:x mandatory;scrollbar-width:none}
-.roles::-webkit-scrollbar{display:none}
-.role{flex:0 0 72%;height:300px;perspective:1000px;scroll-snap-align:start}
-.role .in{position:relative;width:100%;height:100%;transition:transform .6s cubic-bezier(.2,.8,.2,1);transform-style:preserve-3d}
-.role.flip .in{transform:rotateY(180deg)}
-.role .f,.role .b{position:absolute;inset:0;border-radius:20px;backface-visibility:hidden;-webkit-backface-visibility:hidden;padding:20px;display:flex;flex-direction:column;justify-content:space-between;border:1px solid var(--line2)}
-.role .f{background:linear-gradient(160deg,#151515,#050505)}
-.role .f .q{font:700 120px/1 var(--display);color:transparent;-webkit-text-stroke:1.5px var(--red);text-align:center;margin-top:24px}
-.role .b{transform:rotateY(180deg);background:var(--s1)}
-.role .b.mafia{background:linear-gradient(160deg,#3a0705,#0a0000);border-color:var(--red2)}
-.role .b h4{font-size:40px}
-.role .b p{color:#cfcfcf;font-size:14px}
-.role .b .team{font:500 11px Inter;letter-spacing:.14em;text-transform:uppercase}
 .tips{margin-top:8px}
 .tip{display:flex;gap:14px;padding:16px 0;border-bottom:1px solid var(--line)}
 .tip .n{font:700 34px/1 var(--display);color:var(--red);width:30px;flex:none}
@@ -195,3 +182,61 @@ body:not(.notabs) #app{padding-bottom:calc(var(--bot) + 170px)}
 @keyframes up{from{opacity:0;transform:translateY(14px)}}
 .float{animation:float 6s ease-in-out infinite}
 @keyframes float{50%{transform:translateY(-10px) rotate(-2deg)}}
+
+/* ---------- правила ---------- */
+.subnav{position:sticky;top:0;z-index:5;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:18px -18px 0;padding:calc(var(--top) + 10px) 18px 10px;background:linear-gradient(#000 75%,transparent)}
+.subnav::-webkit-scrollbar{display:none}
+.subnav button{flex:none;padding:8px 14px;border-radius:99px;border:1px solid var(--line2);font-size:13px;font-weight:500;color:#bbb;transition:.2s}
+.subnav button.on{background:var(--red);border-color:var(--red);color:#fff}
+.anchor{scroll-margin-top:calc(var(--top) + 60px)}
+.teams{display:grid;gap:8px}
+.team-c{border:1px solid var(--line);border-radius:16px;padding:16px;background:var(--s1)}
+.team-c.black{border-color:var(--red2);background:linear-gradient(150deg,rgba(255,43,34,.14),var(--s1) 60%)}
+.team-c b{display:block;font-size:24px;margin:8px 0 6px}
+.team-c p{color:#c4c4c4;font-size:14px}
+.steps{position:relative}
+.step{display:flex;gap:14px;align-items:flex-start;padding:12px 0;position:relative}
+.step .n{flex:none;width:38px;height:38px;border-radius:12px;border:1px solid var(--line2);display:grid;place-items:center;font:600 18px var(--display);color:var(--red);background:var(--s1);position:relative;z-index:1}
+.step:not(:last-child)::before{content:'';position:absolute;left:19px;top:50px;bottom:-12px;width:1px;background:var(--line2)}
+.step b{font:600 16px var(--display);text-transform:uppercase;letter-spacing:.02em}
+.step p{color:var(--mute);font-size:13px;margin-top:2px}
+.rgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.rcard{aspect-ratio:3/4;border:1.5px solid var(--red2);border-radius:14px;background:radial-gradient(80% 60% at 50% 40%,rgba(255,43,34,.12),transparent),#070707;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:14px 6px 10px;transition:.15s}
+.rcard:active{transform:scale(.96);border-color:var(--red)}
+.rcard span{font:600 13px var(--display);text-transform:uppercase;letter-spacing:.03em}
+.ricon{width:74%;color:var(--red);filter:drop-shadow(0 0 12px rgba(255,43,34,.35))}
+.jargon{display:grid;gap:12px;margin-top:16px;padding:16px;border:1px solid var(--line);border-radius:16px}
+.jargon>div{display:flex;gap:12px}
+.jargon b{font-weight:600;font-size:14px}.jargon p{color:var(--mute);font-size:13px;margin-top:2px}
+.dot{flex:none;width:14px;height:14px;border-radius:50%;margin-top:3px}
+.dot.r{background:var(--red);box-shadow:0 0 10px var(--red)}.dot.b{background:#000;border:2px solid #555}
+.gest{display:grid;gap:8px}
+.gest>div{display:flex;gap:14px;align-items:center;border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--s1)}
+.gest .em{font-size:30px;flex:none;width:40px;text-align:center}
+.gest b{font-weight:600;font-size:14px}.gest p{color:var(--mute);font-size:13px;margin-top:2px}
+.rules{list-style:none;counter-reset:r}
+.rules li{counter-increment:r;position:relative;padding:12px 0 12px 40px;border-bottom:1px solid var(--line);font-size:14px;color:#ddd}
+.rules li::before{content:counter(r,decimal-leading-zero);position:absolute;left:0;top:12px;font:600 15px var(--display);color:var(--red)}
+.strikes{display:grid;gap:6px}
+.strk{display:flex;gap:14px;align-items:center;text-align:left;border-radius:14px;padding:12px 14px;border:1px solid rgba(255,43,34,calc(.2 + var(--k)*.6));background:linear-gradient(90deg,rgba(255,43,34,calc(var(--k)*.28)),transparent)}
+.strk .lvl{flex:none;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:700 17px var(--display);background:rgba(255,43,34,calc(.25 + var(--k)*.75))}
+.strk b{font:600 16px var(--display);text-transform:uppercase}.strk p{color:#bdbdbd;font-size:13px;margin-top:2px}
+
+/* ---------- карточка роли ---------- */
+.sheet-wrap{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,0);transition:background .3s;display:flex;align-items:flex-end;justify-content:center}
+.sheet-wrap.on{background:rgba(0,0,0,.72)}
+.sheet{position:relative;width:100%;max-width:520px;max-height:calc(var(--vh) - var(--top) - 20px);overflow:auto;background:#0a0a0a;border:1px solid var(--line2);border-bottom:0;border-radius:24px 24px 0 0;padding:14px 20px calc(var(--bot) + 20px);transform:translateY(100%);transition:transform .32s cubic-bezier(.2,.8,.2,1)}
+.sheet-wrap.on .sheet{transform:none}
+.sheet-wrap.noanim,.sheet-wrap.noanim .sheet{transition:none}
+.grab{display:block;width:40px;height:4px;border-radius:9px;background:#333;margin:0 auto 14px}
+.x{position:absolute;right:14px;top:12px;width:34px;height:34px;border-radius:50%;background:var(--s2);color:#aaa;font-size:14px}
+.role-h h2{font-size:36px;margin-top:8px}
+.role-b{display:flex;gap:16px;margin-top:18px;align-items:flex-start}
+.frame{flex:none;width:118px;aspect-ratio:3/4;border:1.5px solid var(--red2);border-radius:14px;display:grid;place-items:center;background:#050505}
+.ricon.big{width:80%}
+.role-t p{font-size:14px;color:#dcdcdc;margin-bottom:10px}
+.role-tip{margin-top:6px;padding-top:14px;border-top:1px solid var(--line);font:500 12px/1.5 Inter;letter-spacing:.08em;text-transform:uppercase;color:#a9a9a9}
+.role-tip::after{content:'';display:block;width:26px;height:2px;background:var(--red);margin-top:12px}
+.role-nav{display:flex;justify-content:space-between;gap:8px;margin-top:16px}
+.role-nav button{padding:10px 14px;border:1px solid var(--line2);border-radius:12px;font-size:13px;font-weight:500}
+.role-nav button:disabled{visibility:hidden}
