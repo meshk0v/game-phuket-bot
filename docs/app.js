@@ -81,7 +81,12 @@ const notify = (t) => tg?.HapticFeedback?.notificationOccurred(t);
 let toastT;
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2200); }
 const store = {
-  get: (k) => new Promise((res) => (inTG && tg.CloudStorage ? tg.CloudStorage.getItem(k, (e, v) => res(v || localStorage[k] || '')) : res(localStorage[k] || ''))),
+  get: (k) => new Promise((res) => {
+    const local = localStorage[k] || '';
+    if (!(inTG && tg.CloudStorage && tg.isVersionAtLeast?.('6.9'))) return res(local);
+    setTimeout(() => res(local), 1200); // не ждём бесконечно, если Telegram не ответил
+    try { tg.CloudStorage.getItem(k, (e, v) => res(v || local)); } catch { res(local); }
+  }),
   set: (k, v) => { localStorage[k] = v; if (inTG && tg.CloudStorage) tg.CloudStorage.setItem(k, v); },
 };
 function openLink(u) { inTG ? tg.openLink(u) : window.open(u, '_blank'); }
@@ -122,7 +127,10 @@ function back() {
   go(p);
 }
 function route() {
-  const full = location.hash.slice(1) || (city ? 'afisha' : 'city');
+  const SCREENS = { city: City, spb: Spb, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, ask: Ask, coop: Coop };
+  let full = location.hash.slice(1);
+  // Telegram дописывает в адрес #tgWebAppData=… — это не экран; неизвестные адреса тоже ведём на стартовый
+  if (!SCREENS[full.split('/')[0]]) full = city ? 'afisha' : 'city';
   const [r, arg] = full.split('/');
   if (TABS.includes(r) || r === 'city') stack.length = 0; // вкладки — корневые экраны
   else if (!goingBack && cur && cur !== full) stack.push(cur);
@@ -133,7 +141,7 @@ function route() {
   $('#tabs').style.display = r === 'city' || r === 'spb' ? 'none' : '';
   $$('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === r));
   if (inTG) (isTab || r === 'city') ? tg.BackButton.hide() : tg.BackButton.show();
-  const screen = { city: City, spb: Spb, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, ask: Ask, coop: Coop }[r] || Afisha;
+  const screen = SCREENS[r];
   const backBtn = !inTG && !isTab && r !== 'city' ? '<button class="backb" id="backb">← Назад</button>' : '';
   app.innerHTML = `${backBtn}<div class="view">${screen.html(arg)}</div>`;
   $('#backb')?.addEventListener('click', back);
@@ -416,6 +424,8 @@ function tgUser(k) {
     tg.disableVerticalSwipes?.();
     tg.BackButton.onClick(back);
   }
+  // убираем служебный #tgWebAppData=… из адреса (telegram-web-app.js уже прочитал его при загрузке)
+  if (/tgWebApp/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
   city = await store.get('city');
   route();
 })();
