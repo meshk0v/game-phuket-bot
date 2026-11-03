@@ -80,11 +80,26 @@ const hapticSel = () => tg?.HapticFeedback?.selectionChanged();
 const notify = (t) => tg?.HapticFeedback?.notificationOccurred(t);
 let toastT;
 function toast(m) { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2200); }
-// Выбранный город храним только в localStorage (на этом устройстве)
+// Выбранный город: в Telegram — CloudStorage (привязан к аккаунту, общий для всех устройств),
+// вне Telegram — localStorage. localStorage также служит быстрым кэшем.
 const CITY_KEY = 'gp_city';
-const store = {
+const hasCloud = () => inTG && tg.CloudStorage && tg.isVersionAtLeast?.('6.9');
+const ls = {
   get: (k) => { try { return localStorage[k] || ''; } catch { return ''; } },
   set: (k, v) => { try { v ? (localStorage[k] = v) : localStorage.removeItem(k); } catch {} },
+};
+const store = {
+  get: (k) => new Promise((res) => {
+    const local = ls.get(k);
+    if (!hasCloud()) return res(local);
+    const t = setTimeout(() => res(local), 1500); // если Telegram не ответил — не зависаем
+    try { tg.CloudStorage.getItem(k, (err, v) => { clearTimeout(t); res(err ? local : v || ''); }); }
+    catch { clearTimeout(t); res(local); }
+  }),
+  set: (k, v) => {
+    ls.set(k, v);
+    if (hasCloud()) try { v ? tg.CloudStorage.setItem(k, v) : tg.CloudStorage.removeItem(k); } catch {}
+  },
 };
 function openLink(u) { inTG ? tg.openLink(u) : window.open(u, '_blank'); }
 
@@ -429,7 +444,7 @@ function tgUser(k) {
   }
   // убираем служебный #tgWebAppData=… из адреса (telegram-web-app.js уже прочитал его при загрузке)
   if (/tgWebApp/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
-  city = store.get(CITY_KEY);
+  city = await store.get(CITY_KEY);
   if (inTG && tg.CloudStorage && tg.isVersionAtLeast?.('6.9')) try { tg.CloudStorage.removeItem('city'); } catch {} // старое облачное сохранение
   route();
 })();
