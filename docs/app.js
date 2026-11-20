@@ -284,7 +284,7 @@ const Afisha = {
       <button class="wd ${e.blue ? 'bl' : ''} ${e === sel ? 'on' : ''}" data-day="${e.id}"><small>${WD[e.dow]}</small><b>${e.date.getUTCDate()}</b></button>`).join('')}
     </div>
     <div id="feat">${feature(sel)}</div>
-    <div class="sec"><h3 class="d">Вся неделя</h3><span class="cap">19:00</span></div>
+    <div class="sec"><h3 class="d">Вся неделя</h3></div>
     ${EVENTS.map((e) => `
       <button class="ev ${e.blue ? 'bl' : ''}" data-go="event/${e.id}">
         <div class="day">${WD_FULL[e.dow]}, ${fmtDate(e)}</div>
