@@ -1,0 +1,11 @@
+name = "game-phuket-api"
+main = "index.js"
+compatibility_date = "2024-11-01"
+
+# id хранилища подставляется после команды: npx wrangler@3 kv namespace create CONFIG
+[[kv_namespaces]]
+binding = "CONFIG"
+id = "PASTE_KV_NAMESPACE_ID_HERE"
+
+# Секреты (BOT_TOKEN, ADMIN_IDS) задаются командой `wrangler secret put`, в файл не пишутся.
+# Дополнительные адреса сайта для CORS — через [vars] CORS_ORIGINS = "https://example.com"
