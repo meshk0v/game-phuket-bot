@@ -1,0 +1,100 @@
+{
+  "cities": [
+    {
+      "id": "phuket",
+      "name": "Пхукет",
+      "status": "active",
+      "sub": "5 вечеров в неделю",
+      "tz": 7
+    },
+    {
+      "id": "spb",
+      "name": "Санкт-Петербург",
+      "status": "soon",
+      "sub": "",
+      "tz": 3
+    }
+  ],
+  "events": [
+    {
+      "id": "wed",
+      "city": "phuket",
+      "repeat": "weekly",
+      "dow": 3,
+      "time": "19:00",
+      "type": "Мафия",
+      "title": "Мафия в Вичите",
+      "place": "Beerfest Brewery",
+      "area": "Вичит",
+      "price": 600,
+      "dur": "до 4 часов",
+      "blue": false,
+      "active": true,
+      "desc": "Мафия — это место, где мы кричим, смеёмся и избавляемся от стресса. Вечер заряжен на эмоции — осталось занять место за столом."
+    },
+    {
+      "id": "thu",
+      "city": "phuket",
+      "repeat": "weekly",
+      "dow": 4,
+      "time": "19:00",
+      "type": "Community Day",
+      "title": "Community Day",
+      "place": "Меняется каждую неделю",
+      "area": "уточняйте в чате",
+      "price": 0,
+      "dur": "до 3 часов",
+      "blue": true,
+      "active": true,
+      "desc": "Бесплатные встречи для нашего комьюнити: ужины, сауна, кино и многое другое."
+    },
+    {
+      "id": "fri",
+      "city": "phuket",
+      "repeat": "weekly",
+      "dow": 5,
+      "time": "19:00",
+      "type": "Мафия",
+      "title": "Мафия на Банг-Тао",
+      "place": "Shishka UMAY",
+      "area": "Банг-Тао",
+      "price": null,
+      "dur": "до 4 часов",
+      "blue": false,
+      "active": true,
+      "desc": "Мафия по пятницам заряжает лучше, чем поход на Бангла-роуд."
+    },
+    {
+      "id": "sat",
+      "city": "phuket",
+      "repeat": "weekly",
+      "dow": 6,
+      "time": "19:00",
+      "type": "Мафия",
+      "title": "Мафия на Раваи",
+      "place": "Boss Level",
+      "area": "Раваи",
+      "price": null,
+      "dur": "до 4 часов",
+      "blue": false,
+      "active": true,
+      "desc": "Та самая равайская Мафия — с криками и смехом."
+    },
+    {
+      "id": "sun",
+      "city": "phuket",
+      "repeat": "weekly",
+      "dow": 0,
+      "time": "19:00",
+      "type": "Мафия",
+      "title": "Мафия на Банг-Тао",
+      "place": "LAVA Restobar",
+      "area": "Банг-Тао",
+      "price": null,
+      "dur": "до 4 часов",
+      "blue": false,
+      "active": true,
+      "desc": "На этой Мафии собираются самые важные люди острова."
+    }
+  ]
+}
