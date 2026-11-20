@@ -1,3 +1,3 @@
 // Адрес сервера с API (города и афиша). Пусто — тот же сайт, с которого открыто приложение.
 // Если сайт лежит на GitHub Pages, а сервер отдельно — впишите сюда https-адрес сервера.
-window.GP_API = '';
+window.GP_API = 'https://game-phuket-api.gamephuket.workers.dev';
