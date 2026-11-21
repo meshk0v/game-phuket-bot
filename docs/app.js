@@ -186,6 +186,29 @@ function openLink(u) { inTG ? tg.openLink(u) : window.open(u, '_blank'); }
 const IG_URL = 'https://www.instagram.com/game.phuket';
 const TG_CHAT_URL = 'https://t.me/MafiaPhuket';
 function openTgLink(u) { inTG && tg.openTelegramLink ? tg.openTelegramLink(u) : window.open(u, '_blank'); }
+const openAny = (u) => (/^https:\/\/t\.me\//i.test(u) ? openTgLink(u) : openLink(u));
+const aboutOf = (id) => cityById(id)?.about || {};
+// «@ник» / номер / адрес → полная https-ссылка
+function normUrl(v, kind) {
+  v = String(v || '').trim();
+  if (!v) return '';
+  if (v.startsWith('@')) {
+    const n = v.slice(1);
+    return kind === 'tg' ? `https://t.me/${n}` : kind === 'ig' ? `https://www.instagram.com/${n}` : '';
+  }
+  if (kind === 'wa' && /^\+?[\d\s()-]{7,}$/.test(v)) return `https://wa.me/${v.replace(/\D/g, '')}`;
+  if (!/^https?:\/\//i.test(v)) v = 'https://' + v;
+  return v.replace(/^http:/i, 'https:');
+}
+// подпись под ссылкой: @ник, +номер или домен
+function handleOf(u, kind) {
+  try {
+    const x = new URL(u), first = x.pathname.split('/').filter(Boolean)[0];
+    if (kind === 'site') return x.hostname.replace(/^www\./, '');
+    if (kind === 'wa') return first ? '+' + first : 'WhatsApp';
+    return first ? '@' + first : x.hostname;
+  } catch { return u; }
+}
 
 let mainFn = null;
 function mainButton(text, fn) {
@@ -333,11 +356,11 @@ const Soon = {
       <p class="lead">Готовим игры в этом городе. Анонс — первым делом в Instagram.</p>
     </div>
   </section>
-  <button class="btn white" data-ig>Следить в Instagram</button>
+  ${(aboutOf(city).ig || CFG.cities.find((x) => x.about?.ig)) ? '<button class="btn white" data-ig>Следить в Instagram</button>' : ''}
   ${other ? `<button class="btn ghost" style="margin-top:8px" data-city="${esc(other.id)}">Смотреть афишу: ${esc(other.name)}</button>` : ''}
   <button class="btn ghost" style="margin-top:8px;border:0;color:var(--mute)" data-reset>Сменить город</button>`;
   },
-  bind: () => { City.bind(); $('[data-ig]').onclick = () => openLink(IG_URL); $('[data-reset]').onclick = resetCity; },
+  bind: () => { City.bind(); $('[data-ig]')?.addEventListener('click', () => openLink(aboutOf(city).ig || CFG.cities.find((x) => x.about?.ig).about.ig)); $('[data-reset]').onclick = resetCity; },
 };
 
 let selDay = null;
@@ -862,16 +885,16 @@ const Custom = {
 
 const Club = {
   html: () => {
-    const weekly = EVENTS.filter((x) => x.repeat !== 'once').length;
-    const stats = [['2500+', 'участников'], weekly ? [String(weekly), 'игр в неделю'] : null].filter(Boolean);
+    const weekly = EVENTS.filter((x) => x.repeat !== 'once').length, ab = aboutOf(city);
+    const stats = [ab.members ? [esc(ab.members), 'участников'] : null, weekly ? [String(weekly), 'игр в неделю'] : null].filter(Boolean);
+    const socials = [['tg', 'Чат в Telegram'], ['ig', 'Instagram'], ['wa', 'WhatsApp'], ['site', 'Сайт']].filter(([k]) => ab[k]);
     return `
   ${header()}
   <h1 class="d big">Game<br><span class="red">Phuket</span></h1>
-  <p class="lead" style="margin-top:12px">Игры · Тематические вечера · Частные события</p>
-  <div class="stats" style="grid-template-columns:repeat(${stats.length},1fr)">${stats.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('')}</div>
+  ${ab.lead ? `<p class="lead" style="margin-top:12px">${esc(ab.lead)}</p>` : ''}
+  ${stats.length ? `<div class="stats" style="grid-template-columns:repeat(${stats.length},1fr)">` : '<div hidden>'}${stats.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('')}</div>
   <div class="links">
-    <button class="lnk" data-tgchat><div><b>Чат в Telegram</b><small>@MafiaPhuket · общение и анонсы</small></div><span>↗</span></button>
-    <button class="lnk" data-ig><div><b>Instagram</b><small>@game.phuket</small></div><span>↗</span></button>
+    ${socials.map(([k, t]) => `<button class="lnk" data-soc="${k}"><div><b>${t}</b><small>${esc(handleOf(ab[k], k))}</small></div><span>↗</span></button>`).join('')}
     <button class="lnk" data-go="coop"><div><b>Сотрудничество</b><small>Площадки, бренды, партнёры</small></div><span>→</span></button>
     <button class="lnk" data-go="ask"><div><b>Задать вопрос</b><small>Ответим в ближайшее время</small></div><span>→</span></button>
     <button class="lnk" data-city="reset"><div><b>Сменить город</b><small>Сейчас: ${esc(cityById(city)?.name || '')}</small></div><span>→</span></button>
@@ -879,8 +902,7 @@ const Club = {
   <p class="cap" style="text-align:center;margin-top:30px">${sparks()}</p>`;
   },
   bind: () => {
-    $('[data-ig]').onclick = () => openLink(IG_URL);
-    $('[data-tgchat]').onclick = () => openTgLink(TG_CHAT_URL);
+    $$('[data-soc]').forEach((b) => b.addEventListener('click', () => { haptic(); openAny(aboutOf(city)[b.dataset.soc]); }));
     $('[data-city=reset]').onclick = resetCity;
   },
 };
@@ -966,13 +988,23 @@ const Admin = {
 
 const AdminCity = {
   html: (id) => {
-    const c = id === 'new' ? { name: '', status: 'active', tz: 7 } : cityById(id);
+    const c = id === 'new' ? { name: '', status: 'active', tz: 7, about: {} } : cityById(id);
     if (!c) return '<div class="empty"><b class="d">Город не найден</b></div>';
+    const ab = c.about || {};
     return `
     <h1 class="d big">${id === 'new' ? 'Новый<br><span class="red">город</span>' : esc(c.name)}</h1>
     <div class="field"><label>Название</label><input class="inp" id="c-name" maxlength="60" placeholder="Например: Бангкок" value="${esc(c.name)}"></div>
     <div class="field"><label>Статус</label><div class="seg" id="c-status"><button data-v="active" class="${c.status === 'active' ? 'on' : ''}">Работает</button><button data-v="soon" class="${c.status === 'soon' ? 'on' : ''}">Скоро открытие</button></div></div>
     <div class="field"><label>Часовой пояс (UTC+)</label><input class="inp" id="c-tz" type="number" step="0.5" min="-12" max="14" value="${c.tz}"><p class="hint">Нужен, чтобы время игр и отсчёт считались по местному времени. Пхукет +7, Бали +8, Москва +3.</p></div>
+    <div class="sec" style="margin-top:30px"><h3 class="d">О нас</h3><span class="cap">вкладка «О нас»</span></div>
+    <div class="field" style="margin-top:0"><label>Описание</label><input class="inp" id="c-lead" maxlength="160" placeholder="Игры · Тематические вечера · Частные события" value="${esc(ab.lead || '')}"></div>
+    <div class="field"><label>Участников</label><input class="inp" id="c-members" maxlength="20" placeholder="2500+" value="${esc(ab.members || '')}"><p class="hint">Пусто — цифра не показывается.</p></div>
+    <div class="field"><label>Соцсети и контакты</label>
+      <input class="inp" id="c-tg" placeholder="Чат в Telegram: https://t.me/… или @ник" value="${esc(ab.tg || '')}">
+      <input class="inp" id="c-ig" placeholder="Instagram: https://instagram.com/… или @ник" value="${esc(ab.ig || '')}">
+      <input class="inp" id="c-wa" placeholder="WhatsApp: номер или ссылка wa.me" value="${esc(ab.wa || '')}">
+      <input class="inp" id="c-site" placeholder="Сайт: https://…" value="${esc(ab.site || '')}">
+      <p class="hint">Пустые поля не показываются в приложении.</p></div>
     ${id !== 'new' ? '<button class="btn ghost danger" id="c-del">Удалить город</button>' : ''}`;
   },
   bind: (id) => {
@@ -982,7 +1014,10 @@ const AdminCity = {
       const name = $('#c-name').value.trim();
       if (!name) { notify('error'); return toast('Введите название города'); }
       const next = clone(CFG), tz = Number($('#c-tz').value);
-      const row = { id: id === 'new' ? newId('c') : id, name, status, sub: '', tz: Number.isFinite(tz) ? tz : 0 };
+      const v = (k) => $('#c-' + k).value.trim();
+      const about = { lead: v('lead'), members: v('members'), tg: normUrl(v('tg'), 'tg'), ig: normUrl(v('ig'), 'ig'), wa: normUrl(v('wa'), 'wa'), site: normUrl(v('site'), 'site') };
+      for (const k of ['tg', 'ig', 'wa', 'site']) if (v(k) && !/^https:\/\/[^\s<>"']+$/i.test(about[k])) { notify('error'); $('#c-' + k).focus(); return toast('Проверьте ссылку'); }
+      const row = { id: id === 'new' ? newId('c') : id, name, status, sub: '', tz: Number.isFinite(tz) ? tz : 0, about };
       if (id === 'new') next.cities.push(row); else next.cities[next.cities.findIndex((c) => c.id === id)] = row;
       if (await saveCfg(next)) { toast('Сохранено'); back(); }
     });

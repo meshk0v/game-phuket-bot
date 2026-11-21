@@ -5,14 +5,30 @@
       "name": "Пхукет",
       "status": "active",
       "sub": "",
-      "tz": 7
+      "tz": 7,
+      "about": {
+        "lead": "Игры · Тематические вечера · Частные события",
+        "members": "2500+",
+        "tg": "https://t.me/MafiaPhuket",
+        "ig": "https://www.instagram.com/game.phuket",
+        "wa": "",
+        "site": ""
+      }
     },
     {
       "id": "bali",
       "name": "Бали",
       "status": "active",
       "sub": "",
-      "tz": 8
+      "tz": 8,
+      "about": {
+        "lead": "Игры · Тематические вечера · Частные события",
+        "members": "2500+",
+        "tg": "https://t.me/MafiaPhuket",
+        "ig": "https://www.instagram.com/game.phuket",
+        "wa": "",
+        "site": ""
+      }
     }
   ],
   "events": [

@@ -57,7 +57,9 @@ function sanitize(c) {
     cityIds.add(x.id);
     const name = str(x.name, 60); if (!name) bad('У города нет названия');
     const tz = Number(x.tz);
-    return { id: x.id, name, status: x.status === 'active' ? 'active' : 'soon', sub: str(x.sub, 80), tz: Number.isFinite(tz) && tz >= -12 && tz <= 14 ? tz : 0 };
+    const ab = x.about || {}, url = (v) => (/^https:\/\/[^\s<>"']+$/i.test(String(v || '').trim()) ? String(v).trim().slice(0, 200) : '');
+    const about = { lead: str(ab.lead, 160), members: str(ab.members, 20), tg: url(ab.tg), ig: url(ab.ig), wa: url(ab.wa), site: url(ab.site) };
+    return { id: x.id, name, status: x.status === 'active' ? 'active' : 'soon', sub: str(x.sub, 80), tz: Number.isFinite(tz) && tz >= -12 && tz <= 14 ? tz : 0, about };
   });
   const evIds = new Set();
   const events = c.events.map((e) => {
