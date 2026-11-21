@@ -386,7 +386,7 @@ const EventPage = {
     <div class="facts">
       <div class="fact wide"><span>Где</span><b>${esc(e.place)}</b><div class="mute" style="font-size:13px;margin-top:2px">${esc(e.area)}</div></div>
       <div class="fact"><span>Стоимость</span><b>${priceTxt(e.price)}</b></div>
-      ${e.dur ? (() => { const [main, ...rest] = e.dur.split(' · '), note = rest.join(' · '); return `<div class="fact ${note ? 'wide' : ''}"><span>Длительность</span><b>${esc(main)}</b>${note ? `<small class="fnote">${esc(note)}</small>` : ''}</div>`; })() : ''}
+      ${e.dur ? (() => { const [main, ...rest] = e.dur.split(' · '), note = rest.join(' · '); const long = !note && main.length > 18; return `<div class="fact ${note || long ? 'wide' : ''}"><span>Длительность</span><b class="${long ? 'long' : ''}">${esc(main)}</b>${note ? `<small class="fnote">${esc(note)}</small>` : ''}</div>`; })() : ''}
     </div>
     <div class="stepper"><div><div style="font-weight:500">Сколько вас?</div><div class="mute" style="font-size:12px">можно с друзьями</div></div>
       <div class="ctl"><button data-s="-1">−</button><output id="cnt">1</output><button data-s="1">+</button></div></div>
@@ -963,7 +963,7 @@ const AdminCity = {
 
 const AdminEvent = {
   html: (id) => {
-    const e = id === 'new' ? { city: admCity, repeat: 'weekly', dow: 5, date: '', time: '19:00', type: 'Мафия', title: '', place: '', area: '', price: null, dur: 'до 5 часов · играйте столько партий, сколько комфортно', desc: '', blue: false, active: true } : CFG.events.find((x) => x.id === id);
+    const e = id === 'new' ? { city: admCity, repeat: 'weekly', dow: 5, date: '', time: '19:00', type: 'Мафия', title: '', place: '', area: '', price: null, dur: 'до 5 часов, но можно сыграть любое комфортное количество игр', desc: '', blue: false, active: true } : CFG.events.find((x) => x.id === id);
     if (!e) return '<div class="empty"><b class="d">Мероприятие не найдено</b></div>';
     const dows = [1, 2, 3, 4, 5, 6, 0];
     return `
@@ -980,7 +980,7 @@ const AdminEvent = {
     <div class="field"><label>Место</label><input class="inp" id="e-place" maxlength="100" placeholder="Название заведения" value="${esc(e.place)}">
       <input class="inp" id="e-area" maxlength="80" placeholder="Район / город" value="${esc(e.area)}"></div>
     <div class="field"><label>Стоимость, ฿</label><input class="inp" id="e-price" type="number" min="0" step="1" inputmode="numeric" placeholder="Пусто — «Уточняйте», 0 — «Бесплатно»" value="${e.price ?? ''}">
-      <input class="inp" id="e-dur" maxlength="120" placeholder="Длительность: до 5 часов · пояснение через « · »" value="${esc(e.dur)}"></div>
+      <input class="inp" id="e-dur" maxlength="120" placeholder="Длительность: до 5 часов" value="${esc(e.dur)}"></div>
     <div class="field"><label>Описание</label><textarea class="inp" id="e-desc" maxlength="1000" placeholder="Пара предложений о мероприятии">${esc(e.desc)}</textarea></div>
     <div class="field">
       <label class="sw"><input type="checkbox" id="e-blue" ${e.blue ? 'checked' : ''}><i></i><span>Синий акцент <small>(для особых событий)</small></span></label>
