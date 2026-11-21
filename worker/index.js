@@ -70,6 +70,89 @@ function sanitize(c) {
   return { cities, events };
 }
 
+/* ---------- Запись на игру и оплата ---------- */
+const MON = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+const WD_FULL = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+const h = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+const TG = (env) => env.TELEGRAM_API || 'https://api.telegram.org';
+async function tgCall(env, method, body) {
+  const form = body instanceof FormData;
+  try {
+    const r = await fetch(`${TG(env)}/bot${env.BOT_TOKEN}/${method}`, { method: 'POST', headers: form ? undefined : { 'Content-Type': 'application/json' }, body: form ? body : JSON.stringify(body) });
+    return !!(await r.json()).ok;
+  } catch { return false; }
+}
+const managers = (env) => (env.MANAGER_IDS || env.ADMIN_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+const userOf = (req, env) => validateInitData(req.headers.get('X-Init-Data') || '', env.BOT_TOKEN);
+const OK_TYPES = { 'image/jpeg': 'photo.jpg', 'image/png': 'photo.png', 'image/webp': 'photo.webp', 'application/pdf': 'receipt.pdf' };
+const METHOD_NAME = { thb: 'Тайский счёт (PromptPay)', rub: 'Российский счёт', usdt: 'Крипта (USDT TRC-20)', free: 'Бесплатно', manager: 'Нет возможности оплатить' };
+
+async function register(req, env, send) {
+  const user = await userOf(req, env);
+  if (!user) return send(401, { error: 'Откройте приложение из Telegram' });
+  if (Number(req.headers.get('Content-Length')) > 12e6) return send(413, { error: 'Файл слишком большой' });
+  const rlKey = `rl:${user.id}`, used = Number(await env.CONFIG.get(rlKey)) || 0;
+  if (used >= 6) return send(429, { error: 'Слишком много заявок, попробуйте через час' });
+
+  const f = await req.formData();
+  const state = await readState(env);
+  const ev = state.config.events.find((e) => e.id === f.get('eventId') && e.active !== false);
+  if (!ev) return send(400, { error: 'Мероприятие не найдено' });
+  const city = state.config.cities.find((c) => c.id === ev.city);
+  const date = String(f.get('date') || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) return send(400, { error: 'Неверная дата' });
+  const n = Number(f.get('count'));
+  if (!Number.isInteger(n) || n < 1 || n > 10) return send(400, { error: 'Неверное количество' });
+  let method = String(f.get('method') || '');
+  if (ev.price === 0) method = 'free';
+  if (!['thb', 'rub', 'usdt', 'manager', 'free'].includes(method)) return send(400, { error: 'Неверный способ оплаты' });
+  const pay = (await env.CONFIG.get('payments', 'json')) || {};
+  let amount = '';
+  if (method === 'thb') { if (!(ev.price > 0)) return send(400, { error: 'Сумма не задана' }); amount = `${ev.price * n} ฿`; }
+  if (method === 'rub') { if (!pay.rub?.perPlayer) return send(400, { error: 'Способ недоступен' }); amount = `${pay.rub.perPlayer * n} ₽`; }
+  if (method === 'usdt') { if (!pay.usdt?.perPlayer) return send(400, { error: 'Способ недоступен' }); amount = `${pay.usdt.perPlayer * n} USDT`; }
+
+  const needFile = ['thb', 'rub', 'usdt'].includes(method);
+  const file = f.get('receipt');
+  const hasFile = file && typeof file === 'object' && file.size > 0;
+  if (needFile && !hasFile) return send(400, { error: 'Прикрепите чек об оплате' });
+  if (hasFile && (file.size > 8e6 || !OK_TYPES[file.type])) return send(400, { error: 'Чек: фото (JPG, PNG) или PDF до 8 МБ' });
+
+  const d = new Date(date + 'T00:00:00Z');
+  const when = `${WD_FULL[d.getUTCDay()]}, ${d.getUTCDate()} ${MON[d.getUTCMonth()]}, ${ev.time}`;
+  const comment = String(f.get('comment') || '').trim().slice(0, 300);
+  const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Без имени';
+  const head = method === 'manager' ? '⚠️ <b>НЕТ ВОЗМОЖНОСТИ ОПЛАТИТЬ — свяжитесь с клиентом</b>' : method === 'free' ? '🆕 <b>Новая запись (бесплатное мероприятие)</b>' : '🆕 <b>Новая запись + чек</b>';
+  const text = [
+    head, '',
+    `🎭 ${h(ev.title)}`, `📅 ${h(when)}`, `📍 ${h(ev.place)}${ev.area ? ', ' + h(ev.area) : ''}${city ? ' (' + h(city.name) + ')' : ''}`,
+    `👥 Человек: ${n}`, `💳 ${METHOD_NAME[method]}${amount ? ' — <b>' + h(amount) + '</b>' : ''}`, '',
+    `👤 <a href="tg://user?id=${user.id}">${h(name)}</a>${user.username ? ' @' + h(user.username) : ''}`, `ID: <code>${user.id}</code>`,
+    ...(comment ? ['', `💬 ${h(comment)}`] : []),
+  ].join('\n');
+
+  let delivered = 0;
+  for (const id of managers(env)) {
+    let ok;
+    if (hasFile) {
+      const isPdf = file.type === 'application/pdf', fd = new FormData();
+      fd.append('chat_id', id); fd.append('caption', text); fd.append('parse_mode', 'HTML');
+      fd.append(isPdf ? 'document' : 'photo', file, OK_TYPES[file.type]);
+      ok = await tgCall(env, isPdf ? 'sendDocument' : 'sendPhoto', fd);
+    } else ok = await tgCall(env, 'sendMessage', { chat_id: id, text, parse_mode: 'HTML' });
+    if (ok) delivered++;
+  }
+  if (!delivered) return send(502, { error: 'Не удалось отправить заявку менеджеру. Попробуйте позже.' });
+  await env.CONFIG.put(rlKey, String(used + 1), { expirationTtl: 3600 });
+
+  // подтверждение клиенту в чат с ботом (если не получится — не страшно)
+  const ack = method === 'manager'
+    ? `📨 Заявка отправлена. Менеджер свяжется с вами в ближайшее время.\n\n${h(ev.title)} — ${h(when)}`
+    : `✅ <b>Вы записаны на игру!</b>\n\n🎭 ${h(ev.title)}\n📅 ${h(when)}\n📍 ${h(ev.place)}\n\nХорошего дня и до встречи!`;
+  await tgCall(env, 'sendMessage', { chat_id: user.id, text: ack, parse_mode: 'HTML' });
+  return send(200, { ok: true, kind: method === 'manager' ? 'manager' : 'paid' });
+}
+
 const readState = async (env) => (await env.CONFIG.get('state', 'json')) || { rev: 1, config: DEFAULT_CFG };
 
 export default {
@@ -86,6 +169,17 @@ export default {
     try {
       if (req.method === 'GET' && url.pathname === '/api/config') return send(200, await readState(env));
       if (req.method === 'POST' && url.pathname === '/api/me') return send(200, { isAdmin: await isAdmin(req, env) });
+      if (req.method === 'POST' && url.pathname === '/api/register') return await register(req, env, send);
+      if (req.method === 'GET' && url.pathname === '/api/payments') {
+        if (!(await userOf(req, env))) return send(401, { error: 'Откройте приложение из Telegram' });
+        const p = (await env.CONFIG.get('payments', 'json')) || {};
+        return send(200, { rub: p.rub || null, usdt: p.usdt || null, qr: !!(await env.CONFIG.get('qr_thai', 'arrayBuffer')) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/payments/qr') {
+        if (!(await userOf(req, env))) return send(401, { error: 'Откройте приложение из Telegram' });
+        const img = await env.CONFIG.get('qr_thai', 'arrayBuffer');
+        return img ? new Response(img, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=300', ...cors } }) : send(404, { error: 'Нет QR' });
+      }
       if (req.method === 'PUT' && url.pathname === '/api/admin/config') {
         if (!(await isAdmin(req, env))) return send(403, { error: 'Нет доступа' });
         const raw = await req.text();

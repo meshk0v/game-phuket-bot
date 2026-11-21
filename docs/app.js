@@ -195,7 +195,7 @@ function mainButton(text, fn) {
     tg.MainButton.onClick(fn);
   } else if (text) {
     const b = document.createElement('button');
-    b.id = 'fbtn'; b.className = 'btn fixed'; b.textContent = text; b.onclick = fn;
+    b.id = 'fbtn'; b.className = 'btn fixed'; b.textContent = text; b.dataset.t = text; b.onclick = fn;
     document.body.append(b);
   }
 }
@@ -223,7 +223,7 @@ function back() {
   go(p);
 }
 function route() {
-  const SCREENS = { city: City, soon: Soon, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, ask: Ask, coop: Coop, admin: Admin, admincity: AdminCity, adminevent: AdminEvent };
+  const SCREENS = { city: City, soon: Soon, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, pay: Pay, paydone: PayDone, ask: Ask, coop: Coop, admin: Admin, admincity: AdminCity, adminevent: AdminEvent };
   let full = location.hash.slice(1);
   // Telegram дописывает в адрес #tgWebAppData=… — это не экран; неизвестные адреса тоже ведём на стартовый
   if (!SCREENS[full.split('/')[0]]) full = home();
@@ -384,7 +384,7 @@ const EventPage = {
     </div>
     <div class="stepper"><div><div style="font-weight:500">Сколько вас?</div><div class="mute" style="font-size:12px">можно с друзьями</div></div>
       <div class="ctl"><button data-s="-1">−</button><output id="cnt">1</output><button data-s="1">+</button></div></div>
-    ${e.price ? `<div class="total"><span class="mute">Итого на месте</span><b id="sum">${e.price} ฿</b></div>` : ''}
+    ${e.price ? `<div class="total"><span class="mute">Итого</span><b id="sum">${e.price} ฿</b></div>` : ''}
     <button class="btn ghost" style="margin-top:18px" data-go="ask">Задать вопрос</button>`;
   },
   bind: (id) => {
@@ -400,9 +400,180 @@ const EventPage = {
       if ($('#sum')) $('#sum').textContent = `${e.price * n} ฿`;
       mainButton(label(), submit);
     }));
-    const submit = () => done('Вы записаны!', `${WD_FULL[e.dow]}, ${fmtDate(e)}, ${e.time} — ${e.place}. Мест: ${n}.`);
+    const submit = () => {
+      reg = { id: e.id, n };
+      if (e.price === 0) return sendRegistration(e, n, 'free');   // бесплатно — сразу запись, без оплаты
+      go(`pay/${e.id}`);
+    };
     mainButton(label(), submit);
   },
+};
+
+/* ---------------- запись и оплата ---------------- */
+let reg = null;          // { id, n } — выбранное мероприятие и число человек
+let PAY = null;          // реквизиты, приходят с сервера только в Telegram
+let receipt = null;      // прикреплённый чек (File)
+let sending = false;
+const isoDay = (e) => `${e.date.getUTCFullYear()}-${pad(e.date.getUTCMonth() + 1)}-${pad(e.date.getUTCDate())}`;
+const whenTxt = (e) => `${WD_FULL[e.dow]}, ${fmtDate(e)}, ${e.time}`;
+const authHdr = () => ({ 'X-Init-Data': tg?.initData || '' });
+
+async function loadPay() {
+  if (PAY) return PAY;
+  const r = await getJSON(API + '/api/payments', { headers: authHdr() }, 6000);
+  if (r.ok && r.j) PAY = r.j;
+  return PAY;
+}
+async function loadQr() {
+  try {
+    const r = await fetch(API + '/api/payments/qr', { headers: authHdr() });
+    return r.ok ? URL.createObjectURL(await r.blob()) : '';
+  } catch { return ''; }
+}
+function copyText(t) {
+  const ok = () => { notify('success'); toast('Скопировано'); };
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(t).then(ok, () => legacyCopy(t, ok));
+  else legacyCopy(t, ok);
+}
+function legacyCopy(t, ok) {
+  const ta = Object.assign(document.createElement('textarea'), { value: t, style: 'position:fixed;opacity:0' });
+  document.body.append(ta); ta.select();
+  try { document.execCommand('copy'); ok(); } catch { toast('Не удалось скопировать'); }
+  ta.remove();
+}
+// Фото сжимаем до 1600 px (JPEG) — чек остаётся читаемым и быстро отправляется
+async function prepReceipt(file) {
+  if (file.type === 'application/pdf') {
+    if (file.size > 8e6) throw new Error('Файл больше 8 МБ');
+    return file;
+  }
+  if (!file.type.startsWith('image/')) throw new Error('Нужна фотография или PDF');
+  const asIs = () => { if (file.size > 8e6 || !/^image\/(jpeg|png|webp)$/.test(file.type)) throw new Error('Фото больше 8 МБ или неподдерживаемый формат'); return file; };
+  try {
+    const bmp = await Promise.race([
+      window.createImageBitmap ? createImageBitmap(file) : new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 8000)),
+    ]);
+    const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    const c = Object.assign(document.createElement('canvas'), { width: Math.round(bmp.width * k), height: Math.round(bmp.height * k) });
+    c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.85));
+    return blob ? new File([blob], 'receipt.jpg', { type: 'image/jpeg' }) : asIs();
+  } catch { return asIs(); } // не смогли сжать — отправляем как есть, если подходит по формату и размеру
+}
+
+async function sendRegistration(e, n, method, comment = '') {
+  if (sending) return;
+  if (!API_OK || !inTG) { notify('error'); return toast('Запись работает только в Telegram'); }
+  if (['thb', 'rub', 'usdt'].includes(method) && !receipt) { notify('error'); return toast('Прикрепите чек об оплате'); }
+  sending = true;
+  const fd = new FormData();
+  fd.append('eventId', e.id); fd.append('date', isoDay(e)); fd.append('count', String(n)); fd.append('method', method);
+  if (comment) fd.append('comment', comment);
+  if (receipt && method !== 'manager' && method !== 'free') fd.append('receipt', receipt, receipt.name || 'receipt');
+  tg?.MainButton.showProgress?.(); const fb = $('#fbtn'); if (fb) { fb.disabled = true; fb.textContent = 'Отправляем…'; }
+  let r;
+  try {
+    const resp = await fetch(API + '/api/register', { method: 'POST', headers: authHdr(), body: fd });
+    r = { ok: resp.ok, j: await resp.json().catch(() => null) };
+  } catch { r = { ok: false, j: null }; }
+  sending = false;
+  tg?.MainButton.hideProgress?.(); if (fb) { fb.disabled = false; fb.textContent = fb.dataset.t || 'Отправить'; }
+  if (!r.ok) { notify('error'); return toast(r.j?.error || 'Не удалось отправить. Проверьте интернет и повторите'); }
+  notify('success'); receipt = null;
+  go(`paydone/${e.id}/${r.j.kind}`);
+}
+
+const Pay = {
+  html: (arg) => {
+    const [id, method] = arg.split('/');
+    const e = EVENTS.find((x) => x.id === id);
+    if (!e) return `<div class="empty"><b class="d">Мероприятие не найдено</b><button class="btn" data-go="afisha">К афише</button></div>`;
+    if (!reg || reg.id !== id) reg = { id, n: 1 };
+    return `
+    <p class="cap">Запись на игру</p>
+    <h1 class="d" style="font-size:40px;margin-top:8px">${esc(e.title)}</h1>
+    <p class="mute" style="margin-top:8px;font-size:14px">${whenTxt(e)} · ${esc(e.place)} · ${reg.n} чел.</p>
+    <div id="paybox"><p class="mute" style="padding:30px 0">Загружаем способы оплаты…</p></div>`;
+  },
+  bind: async (arg) => {
+    const [id, method] = arg.split('/');
+    const e = EVENTS.find((x) => x.id === id); if (!e) return;
+    const box = $('#paybox'), n = reg.n;
+    const pay = await loadPay();
+    if (!document.contains(box)) return;
+    const thb = e.price > 0, rub = pay?.rub?.perPlayer, usdt = pay?.usdt?.perPlayer;
+
+    // шаг 1 — выбор способа
+    if (!method) {
+      receipt = null;
+      const m = [
+        thb && ['thb', '🇹🇭', 'Тайский счёт', `${e.price * n} ฿ · QR PromptPay`],
+        rub && ['rub', '🇷🇺', 'Российский счёт', `${rub * n} ₽ · перевод на карту`],
+        usdt && ['usdt', '₮', 'Криптовалюта', `${usdt * n} USDT · ${esc(pay.usdt.network || 'TRC-20')}`],
+        ['manager', '💬', 'Нет такого способа', 'Связаться с менеджером'],
+      ].filter(Boolean);
+      box.innerHTML = `<div class="sec" style="margin-top:22px"><h3 class="d">Способ оплаты</h3></div>
+        <div class="pms">${m.map(([k, ic, t, s]) => `<button class="pm ${k === 'manager' ? 'alt' : ''}" data-pm="${k}"><span class="ic">${ic}</span><div><b>${t}</b><small>${s}</small></div><span class="go">›</span></button>`).join('')}</div>
+        ${pay ? '' : '<p class="hint" style="margin-top:12px">Реквизиты недоступны. Откройте приложение из Telegram.</p>'}`;
+      $$('[data-pm]').forEach((b) => b.addEventListener('click', () => { haptic(); go(`pay/${id}/${b.dataset.pm}`); }));
+      return;
+    }
+
+    // шаг 2 — реквизиты и чек
+    if (method === 'manager') {
+      box.innerHTML = `<div class="sec" style="margin-top:22px"><h3 class="d">Связаться с менеджером</h3></div>
+        <p class="lead" style="font-size:14px">Заявка уйдёт менеджеру с пометкой «нет возможности оплатить». Он свяжется с вами и подскажет, как оплатить.</p>
+        <div class="field"><label>Комментарий (необязательно)</label><textarea class="inp" id="pm-note" maxlength="300" placeholder="Например: «Живу в другой стране, удобнее оплатить картой»"></textarea></div>`;
+      mainButton('Отправить заявку менеджеру', () => sendRegistration(e, n, 'manager', $('#pm-note').value.trim()));
+      return;
+    }
+    const amount = method === 'thb' ? `${e.price * n} ฿` : method === 'rub' ? `${rub * n} ₽` : `${usdt * n} USDT`;
+    if ((method === 'thb' && !thb) || (method === 'rub' && !rub) || (method === 'usdt' && !usdt)) { box.innerHTML = '<p class="mute">Способ недоступен.</p>'; return; }
+    let details = '';
+    if (method === 'thb') details = `<div class="qrbox" id="qrbox">${pay?.qr ? '<span class="mute">Загружаем QR…</span>' : '<span class="mute">QR недоступен</span>'}</div><p class="hint" style="text-align:center">Откройте банковское приложение → «Сканировать QR» → оплатите сумму выше.</p>`;
+    if (method === 'rub') details = `<div class="copyrow"><div><span>Номер карты</span><b>${esc(pay.rub.card)}</b></div><button data-copy="${esc(String(pay.rub.card).replace(/\s/g, ''))}">Копировать</button></div>
+      <div class="copyrow"><div><span>Получатель</span><b>${esc(pay.rub.holder || '')}</b></div></div>`;
+    if (method === 'usdt') details = `<div class="copyrow"><div><span>Сеть</span><b>${esc(pay.usdt.network || 'TRC-20')}</b></div></div>
+      <div class="copyrow"><div><span>Адрес кошелька</span><b class="mono">${esc(pay.usdt.address)}</b></div><button data-copy="${esc(pay.usdt.address)}">Копировать</button></div>
+      <p class="hint">Отправляйте только USDT в сети TRC-20, иначе средства потеряются.</p>`;
+    box.innerHTML = `<div class="sec" style="margin-top:22px"><h3 class="d">${method === 'thb' ? 'Тайский счёт' : method === 'rub' ? 'Российский счёт' : 'Криптовалюта'}</h3></div>
+      <div class="amount"><span>К оплате</span><b>${amount}</b></div>
+      ${details}
+      <div class="sec" style="margin-top:26px"><h3 class="d">Чек об оплате</h3></div>
+      <label class="attach" id="attach"><input type="file" id="rc" accept="image/*,application/pdf"><span class="ico">📎</span><div><b id="rc-t">Прикрепить чек</b><small id="rc-s">Фото, скриншот или PDF</small></div></label>
+      <img id="rc-img" class="rcimg" alt="" hidden>`;
+    $$('[data-copy]').forEach((b) => b.addEventListener('click', () => copyText(b.dataset.copy)));
+    if (method === 'thb' && pay?.qr) loadQr().then((u) => { const q = $('#qrbox'); if (q) q.innerHTML = u ? `<img src="${u}" alt="QR для оплаты">` : '<span class="mute">Не удалось загрузить QR</span>'; });
+    $('#rc').addEventListener('change', async (ev) => {
+      const f = ev.target.files[0]; if (!f) return;
+      try {
+        receipt = await prepReceipt(f); hapticSel();
+        $('#rc-t').textContent = 'Чек прикреплён ✓'; $('#rc-s').textContent = `${receipt.name} · ${(receipt.size / 1024).toFixed(0)} КБ · нажмите, чтобы заменить`;
+        $('#attach').classList.add('ok');
+        const im = $('#rc-img'); if (receipt.type.startsWith('image/')) { im.src = URL.createObjectURL(receipt); im.hidden = false; } else im.hidden = true;
+      } catch (err) { receipt = null; notify('error'); toast(err.message || 'Не удалось прочитать файл'); }
+    });
+    mainButton('Отправить', () => sendRegistration(e, n, method));
+  },
+};
+
+const PayDone = {
+  html: (arg) => {
+    const [id, kind] = arg.split('/');
+    const e = EVENTS.find((x) => x.id === id);
+    const paid = kind !== 'manager';
+    return `
+    <section class="done">
+      <div class="tick">${paid ? '✓' : '✉'}</div>
+      <h1 class="d">${paid ? 'Вы записаны<br><span class="red">на игру</span>' : 'Заявка<br><span class="red">отправлена</span>'}</h1>
+      <p class="lead">${paid ? 'Хорошего дня и до встречи!' : 'Менеджер свяжется с вами в ближайшее время.'}</p>
+      ${e ? `<div class="ticket"><span class="cap">${esc(e.title)}</span><b class="d">${whenTxt(e)}</b><p>${esc(e.place)}${e.area ? ', ' + esc(e.area) : ''}</p><p>${(reg?.n || 1)} чел.</p></div>` : ''}
+      <p class="hint" style="text-align:center">${paid ? 'Подтверждение придёт и в чат с ботом.' : ''}</p>
+      <button class="btn" data-go="afisha" style="margin-top:20px">В афишу</button>
+    </section>`;
+  },
+  bind: () => { stack.length = 0; receipt = null; },
 };
 
 const Games = {
