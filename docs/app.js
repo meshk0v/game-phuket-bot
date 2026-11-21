@@ -182,6 +182,10 @@ const store = {
   },
 };
 function openLink(u) { inTG ? tg.openLink(u) : window.open(u, '_blank'); }
+// Соцсети Game Phuket
+const IG_URL = 'https://www.instagram.com/game.phuket';
+const TG_CHAT_URL = 'https://t.me/MafiaPhuket';
+function openTgLink(u) { inTG && tg.openTelegramLink ? tg.openTelegramLink(u) : window.open(u, '_blank'); }
 
 let mainFn = null;
 function mainButton(text, fn) {
@@ -298,7 +302,7 @@ const Soon = {
   ${other ? `<button class="btn ghost" style="margin-top:8px" data-city="${esc(other.id)}">Смотреть афишу: ${esc(other.name)}</button>` : ''}
   <button class="btn ghost" style="margin-top:8px;border:0;color:var(--mute)" data-reset>Сменить город</button>`;
   },
-  bind: () => { City.bind(); $('[data-ig]').onclick = () => openLink('https://instagram.com/game.phuket'); $('[data-reset]').onclick = resetCity; },
+  bind: () => { City.bind(); $('[data-ig]').onclick = () => openLink(IG_URL); $('[data-reset]').onclick = resetCity; },
 };
 
 let selDay = null;
@@ -832,15 +836,17 @@ const Club = {
   <p class="lead" style="margin-top:12px">Игры · Тематические вечера · Частные события</p>
   <div class="stats" style="grid-template-columns:repeat(${stats.length},1fr)">${stats.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('')}</div>
   <div class="links">
+    <button class="lnk" data-tgchat><div><b>Чат в Telegram</b><small>@MafiaPhuket · общение и анонсы</small></div><span>↗</span></button>
+    <button class="lnk" data-ig><div><b>Instagram</b><small>@game.phuket</small></div><span>↗</span></button>
     <button class="lnk" data-go="coop"><div><b>Сотрудничество</b><small>Площадки, бренды, партнёры</small></div><span>→</span></button>
     <button class="lnk" data-go="ask"><div><b>Задать вопрос</b><small>Ответим в ближайшее время</small></div><span>→</span></button>
-    <button class="lnk" data-ig><div><b>Instagram</b><small>@game.phuket</small></div><span>↗</span></button>
     <button class="lnk" data-city="reset"><div><b>Сменить город</b><small>Сейчас: ${esc(cityById(city)?.name || '')}</small></div><span>→</span></button>
   </div>
   <p class="cap" style="text-align:center;margin-top:30px">${sparks()}</p>`;
   },
   bind: () => {
-    $('[data-ig]').onclick = () => openLink('https://instagram.com/game.phuket');
+    $('[data-ig]').onclick = () => openLink(IG_URL);
+    $('[data-tgchat]').onclick = () => openTgLink(TG_CHAT_URL);
     $('[data-city=reset]').onclick = resetCity;
   },
 };
