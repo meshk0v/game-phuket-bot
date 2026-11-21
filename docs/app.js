@@ -151,11 +151,8 @@ const MASK = (cls = '') => `
   <ellipse cx="66" cy="58" rx="26" ry="14" fill="#fff" opacity=".13" transform="rotate(-28 66 58)"/>
   <ellipse cx="58" cy="168" rx="8" ry="24" fill="#fff" opacity=".05"/>
 </svg>`;
-const LOGO = `<svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="19" fill="#0d1a33" stroke="#ff2b22" stroke-width="1.5"/>
-  <path d="M15 11c-5 1-7 5-6.5 9.5S12 29 16 29c1.5 0 2.5-1 2.5-2.5V12.5c0-1-1.5-1.8-3.5-1.5z" fill="#fff"/>
-  <path d="M23 13c4 0 7 3 7 7.5S27 28 24 28c-1.2 0-2-.8-2-2V14c0-.6.4-1 1-1z" fill="#fff" opacity=".85"/>
-  <path d="M29 8l.6 2.2L32 11l-2.4.8L29 14l-.6-2.2L26 11l2.4-.8z" fill="#ff2b22"/></svg>`;
-const header = (right = '') => `<div class="bar"><div class="brand">${LOGO}<b>Game<br>Phuket</b></div>${right}</div>`;
+const LOGO = '<img class="logo" src="logo.png" alt="Game Phuket" width="52" height="52">';
+const header = (right = '') => `<div class="bar"><div class="brand">${LOGO}</div>${right}</div>`;
 
 /* ---------------- Telegram ---------------- */
 const haptic = (t = 'light') => tg?.HapticFeedback?.impactOccurred(t);
