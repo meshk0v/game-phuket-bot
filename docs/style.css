@@ -58,7 +58,7 @@ body.notabs #app{padding-bottom:calc(var(--bot) + 110px)}
 .feature{position:relative;margin-top:18px;border-radius:20px;overflow:hidden;border:1px solid var(--line);background:radial-gradient(120% 90% at 100% 0%,rgba(255,43,34,.35),transparent 55%),var(--s1);padding:20px;min-height:250px;display:flex;flex-direction:column;justify-content:flex-end}
 .feature.bl{background:radial-gradient(120% 90% at 100% 0%,rgba(61,139,255,.35),transparent 55%),var(--s1)}
 .feature .mask{position:absolute;right:-34px;top:-14px;width:160px;opacity:.6}
-.feature .tag{position:absolute;left:20px;top:18px}
+.feature .tag{position:relative;display:block;margin-bottom:12px;max-width:75%}
 .feature h2{font-size:40px;max-width:75%}
 .feature .where{color:#cfcfcf;margin-top:8px;font-size:14px}
 .count{display:flex;gap:8px;margin-top:16px}
