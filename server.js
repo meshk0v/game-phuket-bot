@@ -137,7 +137,8 @@ http.createServer(async (req, res) => {
 
 /* ---------- Bot ---------- */
 if (!BOT_TOKEN) { console.log('BOT_TOKEN не задан — запущен только веб-сервер мини-аппа.'); }
-else startBot();
+else if (process.env.LOCAL_BOT === '1') startBot();
+else console.log('Бот работает через Cloudflare Worker (вебхук). Локальный запуск бота: LOCAL_BOT=1 (отключит вебхук).');
 
 async function api(method, payload = {}) {
   const r = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {

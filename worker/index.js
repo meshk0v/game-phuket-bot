@@ -85,19 +85,26 @@ async function tgJson(env, method, body) {
 const tgCall = async (env, method, body) => !!(await tgJson(env, method, body)).ok;
 const managers = (env) => (env.MANAGER_IDS || env.ADMIN_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
 const fullName = (u) => [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Без имени';
-const userLine = (u) => `👤 <a href="tg://user?id=${u.id}">${h(fullName(u))}</a>${u.username ? ' @' + h(u.username) : ''}\nID: <code>${u.id}</code>`;
+const profileUrl = (u) => (u.username ? `https://t.me/${u.username}` : `tg://user?id=${u.id}`);
+// «Имя» кликабельно по ID даже без @username
+const who = (u) => `👤 <a href="tg://user?id=${u.id}">${h(fullName(u))}</a>${u.username ? ' · @' + h(u.username) : ''}\n🆔 <code>${u.id}</code>`;
+const profileRow = (u) => [{ text: '👤 Профиль', url: profileUrl(u) }, { text: '📋 Скопировать ID', copy_text: { text: String(u.id) } }];
+const pad2 = (n) => String(n).padStart(2, '0');
+const tgTime = (unix, fmt, label) => `<tg-time unix="${unix}" format="${fmt}">${h(label)}</tg-time>`;
+const quote = (s) => `<blockquote${s.length > 300 ? ' expandable' : ''}>${h(s)}</blockquote>`;
 
-// Отправка в одну точку: (chat, thread) — текст или файл с подписью
-async function post(env, chat, thread, text, file) {
+// Отправка в одну точку: (chat, thread) — текст или файл с подписью, с кнопками
+async function post(env, chat, thread, text, file, markup) {
   const base = { chat_id: chat, parse_mode: 'HTML', ...(thread ? { message_thread_id: thread } : {}) };
-  if (!file) return tgJson(env, 'sendMessage', { ...base, text });
+  if (!file) return tgJson(env, 'sendMessage', { ...base, text, ...(markup ? { reply_markup: markup } : {}) });
   const isPdf = file.type === 'application/pdf', fd = new FormData();
   for (const [k, v] of Object.entries({ ...base, caption: text })) fd.append(k, String(v));
+  if (markup) fd.append('reply_markup', JSON.stringify(markup));
   fd.append(isPdf ? 'document' : 'photo', file, OK_TYPES[file.type]);
   return tgJson(env, isPdf ? 'sendDocument' : 'sendPhoto', fd);
 }
 // На каждого участника — своя тема в чате менеджеров (id темы хранится в KV)
-async function sendToChat(env, user, text, file) {
+async function sendToChat(env, user, text, file, markup) {
   const chat = env.MANAGER_CHAT_ID;
   if (!chat) return false;
   const key = `topic:${chat}:${user.id}`;
@@ -109,8 +116,8 @@ async function sendToChat(env, user, text, file) {
       else if (!/not a forum/i.test(t.description || '')) return false; // нет прав на создание тем и т.п. — запасной путь
       // иначе чат без тем: пишем в общий поток
     }
-    if (fresh) await post(env, chat, thread, `🆕 <b>Новый участник</b>\n\n${userLine(user)}${user.language_code ? '\nЯзык: ' + h(user.language_code) : ''}\n\nВсе заявки этого человека будут в этой теме.`);
-    const r = await post(env, chat, thread, text, file);
+    if (fresh) await post(env, chat, thread, `🆕 <b>Новый участник</b>\n\n${who(user)}`, null, { inline_keyboard: [profileRow(user)] });
+    const r = await post(env, chat, thread, text, file, markup);
     if (r.ok) return true;
     if (thread && attempt === 0 && /thread not found|TOPIC_DELETED|topic.*(closed|deleted)/i.test(r.description || '')) { await env.CONFIG.delete(key); continue; } // тему удалили — создадим заново
     return false;
@@ -118,10 +125,10 @@ async function sendToChat(env, user, text, file) {
   return false;
 }
 // Основной путь — чат с темами; если не вышло — личные сообщения менеджерам
-async function deliver(env, user, text, file) {
-  if (await sendToChat(env, user, text, file)) return 1;
+async function deliver(env, user, text, file, markup) {
+  if (await sendToChat(env, user, text, file, markup)) return 1;
   let n = 0;
-  for (const id of managers(env)) if ((await post(env, id, null, text, file)).ok) n++;
+  for (const id of managers(env)) if ((await post(env, id, null, text, file, markup)).ok) n++;
   return n;
 }
 async function rateOk(env, user, kind, max) {
@@ -165,18 +172,25 @@ async function register(req, env, send) {
 
   const d = new Date(date + 'T00:00:00Z');
   const when = `${WD_FULL[d.getUTCDay()]}, ${d.getUTCDate()} ${MON[d.getUTCMonth()]}, ${ev.time}`;
+  const [yy, mo, dd] = date.split('-').map(Number), [hh, mi] = ev.time.split(':').map(Number);
+  const unix = Math.floor((Date.UTC(yy, mo - 1, dd, hh, mi) - (city?.tz ?? 0) * 3600e3) / 1000); // начало игры по времени города
   const comment = String(f.get('comment') || '').trim().slice(0, 300);
-  const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Без имени';
-  const head = method === 'manager' ? '⚠️ <b>НЕТ ВОЗМОЖНОСТИ ОПЛАТИТЬ — свяжитесь с клиентом</b>' : method === 'free' ? '🆕 <b>Новая запись (бесплатное мероприятие)</b>' : '🆕 <b>Новая запись + чек</b>';
+  const head = method === 'manager' ? '⚠️ <b>Нет возможности оплатить</b> — свяжитесь с клиентом' : method === 'free' ? '🎟 <b>Новая запись</b> · бесплатно' : '🧾 <b>Новая запись + чек</b>';
   const text = [
     head, '',
-    `🎭 ${h(ev.title)}`, `📅 ${h(when)}`, `📍 ${h(ev.place)}${ev.area ? ', ' + h(ev.area) : ''}${city ? ' (' + h(city.name) + ')' : ''}`,
-    `👥 Человек: ${n}`, `💳 ${METHOD_NAME[method]}${amount ? ' — <b>' + h(amount) + '</b>' : ''}`, '',
-    userLine(user),
-    ...(comment ? ['', `💬 ${h(comment)}`] : []),
+    `<blockquote>🎭 <b>${h(ev.title)}</b>\n📅 ${tgTime(unix, 'wDt', when)} · ${tgTime(unix, 'r', 'скоро')}\n📍 ${h(ev.place)}${ev.area ? ', ' + h(ev.area) : ''}${city ? ' (' + h(city.name) + ')' : ''}</blockquote>`, '',
+    `👥 <b>${n}</b> чел.${method === 'free' || method === 'manager' ? '' : ` · 💳 ${METHOD_NAME[method]}`}`,
+    ...(amount ? [`💰 <b>${h(amount)}</b>`] : []), '',
+    who(user),
+    ...(comment ? ['', quote(comment)] : []),
   ].join('\n');
 
-  const delivered = await deliver(env, user, text, hasFile ? file : null);
+  // запись о заявке — для кнопки «Подтвердить» (хранится 60 дней)
+  const rid = crypto.randomUUID().slice(0, 8), kind = method === 'manager' ? 'manager' : 'paid';
+  await env.CONFIG.put('reg:' + rid, JSON.stringify({ uid: user.id, uname: user.username || '', html: text, file: !!hasFile, kind, title: ev.title, when, place: ev.place }), { expirationTtl: 60 * 86400 });
+  const markup = { inline_keyboard: [[{ text: kind === 'manager' ? '✅ Обработано' : '✅ Подтвердить', callback_data: 'ok:' + rid, style: 'success' }], profileRow(user)] };
+
+  const delivered = await deliver(env, user, text, hasFile ? file : null, markup);
   if (!delivered) return send(502, { error: 'Не удалось отправить заявку менеджеру. Попробуйте позже.' });
   await rate.bump();
 
@@ -200,27 +214,69 @@ async function request(req, env, send) {
   if (!['ask', 'coop', 'order', 'custom'].includes(type)) return send(400, { error: 'Неверный тип заявки' });
   if (!contact) return send(400, { error: 'Укажите контакт' });
   let head, lines = [];
-  if (type === 'ask') { if (!message) return send(400, { error: 'Напишите вопрос' }); head = '❓ <b>Вопрос</b>'; lines = [`💬 ${h(message)}`]; }
-  if (type === 'coop') { if (!message) return send(400, { error: 'Опишите предложение' }); head = '🤝 <b>Сотрудничество</b>'; lines = [`💬 ${h(message)}`]; }
+  if (type === 'ask') { if (!message) return send(400, { error: 'Напишите вопрос' }); head = '❓ <b>Вопрос</b>'; lines = [quote(message)]; }
+  if (type === 'coop') { if (!message) return send(400, { error: 'Опишите предложение' }); head = '🤝 <b>Сотрудничество</b>'; lines = [quote(message)]; }
   if (type === 'custom') {
     if (!message) return send(400, { error: 'Опишите мероприятие' });
-    const guests = Math.round(Number(b.guests));
+    const guests = Math.round(Number(b.guests)), hasDate = /^\d{4}-\d{2}-\d{2}$/.test(b.date || '');
     head = '✨ <b>Своё мероприятие</b>';
-    lines = [`💬 ${h(message)}`, ...(guests >= 1 && guests <= 1000 ? [`👥 Гостей: ${guests}`] : []), ...(/^\d{4}-\d{2}-\d{2}$/.test(b.date || '') ? [`📅 Дата: ${h(b.date)}`] : [])];
+    lines = [quote(message), ...(guests >= 1 && guests <= 1000 || hasDate ? ['', `<blockquote>${[guests >= 1 && guests <= 1000 ? `👥 Гостей: <b>${guests}</b>` : '', hasDate ? `📅 Дата: <b>${h(b.date)}</b>` : ''].filter(Boolean).join('\n')}</blockquote>`] : [])];
   }
   if (type === 'order') {
     const formats = (Array.isArray(b.formats) ? b.formats : []).map((x) => t(x, 30)).filter(Boolean).slice(0, 10);
     if (!formats.length) return send(400, { error: 'Выберите хотя бы одну игру' });
     const guests = Math.min(500, Math.max(1, Math.round(Number(b.guests)) || 1));
     head = '🎉 <b>Заказ игр на мероприятие</b>';
-    lines = [`🎮 ${h(formats.join(', '))}`, `👥 Гостей: ${guests}`, `🌐 Язык: ${b.lang === 'EN' ? 'English' : 'Русский'}`, ...(/^\d{4}-\d{2}-\d{2}$/.test(b.date || '') ? [`📅 Дата: ${h(b.date)}`] : []), ...(message ? [`💬 ${h(message)}`] : [])];
+    lines = [`<blockquote>🎮 <b>${h(formats.join(', '))}</b>\n👥 Гостей: <b>${guests}</b> · 🌐 ${b.lang === 'EN' ? 'English' : 'Русский'}${/^\d{4}-\d{2}-\d{2}$/.test(b.date || '') ? `\n📅 Дата: <b>${h(b.date)}</b>` : ''}</blockquote>`, ...(message ? ['', quote(message)] : [])];
   }
-  const text = [head, '', ...lines, '', `📞 ${h(contact)}${name ? ' (' + h(name) + ')' : ''}`, userLine(user)].join('\n');
-  if (!(await deliver(env, user, text))) return send(502, { error: 'Не удалось отправить. Попробуйте позже.' });
+  const text = [head, '', ...lines, '', `📞 <b>${h(contact)}</b>${name ? ' · ' + h(name) : ''}`, '', who(user)].join('\n');
+  if (!(await deliver(env, user, text, null, { inline_keyboard: [profileRow(user)] }))) return send(502, { error: 'Не удалось отправить. Попробуйте позже.' });
   await rate.bump();
   const ack = { ask: '📨 Вопрос получен. Ответим в ближайшее время.', coop: '📨 Предложение получено. Менеджер свяжется с вами.', order: '📨 Заявка на мероприятие получена. Менеджер свяжется с вами в ближайшее время.', custom: '📨 Заявка на ваше мероприятие получена. Менеджер свяжется с вами в ближайшее время.' }[type];
   await tgCall(env, 'sendMessage', { chat_id: user.id, text: ack });
   return send(200, { ok: true });
+}
+
+/* ---------- Бот на вебхуке: /start, /id, кнопка «Подтвердить» ---------- */
+async function canConfirm(env, q) {
+  const ids = new Set([...managers(env), ...(env.ADMIN_IDS || '').split(',').map((s) => s.trim())]);
+  if (ids.has(String(q.from.id))) return true;
+  if (q.message?.chat?.type && q.message.chat.type !== 'private') {
+    const m = await tgJson(env, 'getChatMember', { chat_id: q.message.chat.id, user_id: q.from.id });
+    return !!m.ok && ['creator', 'administrator'].includes(m.result.status);
+  }
+  return false;
+}
+async function onCallback(env, q) {
+  const answer = (text, alert) => tgCall(env, 'answerCallbackQuery', { callback_query_id: q.id, text, show_alert: !!alert });
+  const id = String(q.data || '').startsWith('ok:') ? q.data.slice(3) : null;
+  if (!id || !q.message) return answer();
+  const rec = await env.CONFIG.get('reg:' + id, 'json');
+  if (!rec) return answer('Заявка устарела', true);
+  if (!(await canConfirm(env, q))) return answer('Подтверждать могут только менеджеры', true);
+  if (rec.by) return answer('Уже подтверждено: ' + rec.by);
+  const by = fullName(q.from), now = Date.now(), unix = Math.floor(now / 1000), bk = new Date(now + 7 * 3600e3);
+  rec.by = by;
+  await env.CONFIG.put('reg:' + id, JSON.stringify(rec), { expirationTtl: 60 * 86400 });
+  const line = `${rec.kind === 'manager' ? '✅ <b>Обработано</b>' : '✅ <b>Подтверждено</b>'} · ${h(by)} · ${tgTime(unix, 'Dt', `${pad2(bk.getUTCDate())}.${pad2(bk.getUTCMonth() + 1)} ${pad2(bk.getUTCHours())}:${pad2(bk.getUTCMinutes())}`)}`;
+  const body = { chat_id: q.message.chat.id, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: { inline_keyboard: [profileRow({ id: rec.uid, username: rec.uname })] } };
+  await tgJson(env, rec.file ? 'editMessageCaption' : 'editMessageText', { ...body, ...(rec.file ? { caption: `${rec.html}\n\n${line}` } : { text: `${rec.html}\n\n${line}` }) });
+  await answer(rec.kind === 'manager' ? 'Отмечено ✅' : 'Подтверждено ✅');
+  if (rec.kind !== 'manager') await tgCall(env, 'sendMessage', { chat_id: rec.uid, parse_mode: 'HTML', text: `✅ <b>Запись подтверждена</b>\n\n<blockquote>🎭 <b>${h(rec.title)}</b>\n📅 ${h(rec.when)}\n📍 ${h(rec.place)}</blockquote>\n\nЖдём вас! 🎭` });
+}
+async function onUpdate(env, u) {
+  if (u.callback_query) return onCallback(env, u.callback_query);
+  const m = u.message;
+  if (!m?.text) return;
+  if (/^\/start(@\w+)?(\s|$)/.test(m.text) && m.chat.type === 'private') {
+    return tgCall(env, 'sendMessage', { chat_id: m.chat.id, parse_mode: 'HTML',
+      text: 'Приветствую! 🎭\n<b>Game Phuket</b> — мафия-клуб на Пхукете.\n\nАфиша, запись на игры, частные мероприятия и сотрудничество — всё в приложении 👇',
+      reply_markup: { inline_keyboard: [[{ text: '🚀 Открыть Game Phuket', web_app: { url: env.WEBAPP_URL } }]] } });
+  }
+  if (/^\/id(@\w+)?(\s|$)/.test(m.text)) {
+    const text = m.chat.type === 'private' ? `Ваш Telegram ID: <code>${m.from.id}</code>` : `ID этого чата: <code>${m.chat.id}</code>${m.message_thread_id ? `\nТема: <code>${m.message_thread_id}</code>` : ''}`;
+    return tgCall(env, 'sendMessage', { chat_id: m.chat.id, parse_mode: 'HTML', text, ...(m.message_thread_id ? { message_thread_id: m.message_thread_id } : {}) });
+  }
 }
 
 const readState = async (env) => (await env.CONFIG.get('state', 'json')) || { rev: 1, config: DEFAULT_CFG };
@@ -239,6 +295,11 @@ export default {
     try {
       if (req.method === 'GET' && url.pathname === '/api/config') return send(200, await readState(env));
       if (req.method === 'POST' && url.pathname === '/api/me') return send(200, { isAdmin: await isAdmin(req, env) });
+      if (req.method === 'POST' && url.pathname === '/api/tg') {
+        if (!env.TG_WEBHOOK_SECRET || req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== env.TG_WEBHOOK_SECRET) return new Response('forbidden', { status: 403 });
+        try { await onUpdate(env, await req.json()); } catch { /* Telegram не должен получать ошибку и слать повторы */ }
+        return new Response('ok');
+      }
       if (req.method === 'POST' && url.pathname === '/api/register') return await register(req, env, send);
       if (req.method === 'POST' && url.pathname === '/api/request') return await request(req, env, send);
       if (req.method === 'GET' && url.pathname === '/api/payments') {
