@@ -623,7 +623,6 @@ const PayDone = {
       <h1 class="d">${paid ? 'Вы записаны<br><span class="red">на игру</span>' : 'Заявка<br><span class="red">отправлена</span>'}</h1>
       <p class="lead">${paid ? 'Хорошего дня и до встречи!' : 'Менеджер свяжется с вами в ближайшее время.'}</p>
       ${e ? `<div class="ticket"><span class="cap">${esc(e.title)}</span><b class="d">${whenTxt(e)}</b><p>${esc(e.place)}${e.area ? ', ' + esc(e.area) : ''}</p><p>${(reg?.n || 1)} чел.</p></div>` : ''}
-      <p class="hint" style="text-align:center">${paid ? 'Подтверждение придёт и в чат с ботом.' : ''}</p>
       <button class="btn" data-go="afisha" style="margin-top:20px">В афишу</button>
     </section>`;
   },
