@@ -333,3 +333,9 @@ html:not([data-mobile]) .toast{top:auto;bottom:calc(var(--bot) + 160px)}
 .modal p{color:#c9c9c9;font-size:15px;margin-top:10px;white-space:pre-line}
 .modal-btns{display:grid;gap:8px;margin-top:22px}
 .modal-btns.two{grid-template-columns:1fr 1fr}
+
+/* поля с иконкой (соцсети в админке) */
+.inp-ic{position:relative}
+.inp-ic+.inp-ic{margin-top:8px}
+.inp-ic svg{position:absolute;left:14px;top:50%;width:24px;height:24px;transform:translateY(-50%);pointer-events:none}
+.inp-ic .inp{padding-left:50px}

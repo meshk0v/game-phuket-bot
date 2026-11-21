@@ -186,6 +186,12 @@ function openLink(u) { inTG ? tg.openLink(u) : window.open(u, '_blank'); }
 const IG_URL = 'https://www.instagram.com/game.phuket';
 const TG_CHAT_URL = 'https://t.me/MafiaPhuket';
 function openTgLink(u) { inTG && tg.openTelegramLink ? tg.openTelegramLink(u) : window.open(u, '_blank'); }
+const SOC_ICON = {
+  tg: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#29A9EB"/><path d="M17.6 7.2 15.8 16c-.1.6-.5.8-1 .5l-2.8-2.1-1.4 1.3c-.2.2-.3.3-.6.3l.2-2.9 5.2-4.7c.2-.2 0-.3-.3-.1l-6.4 4-2.8-.9c-.6-.2-.6-.6.1-.9l10.9-4.2c.5-.2 1 .1.7.9z" fill="#fff"/></svg>',
+  ig: '<svg viewBox="0 0 24 24"><defs><linearGradient id="igg" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#feda75"/><stop offset=".35" stop-color="#fa7e1e"/><stop offset=".6" stop-color="#d62976"/><stop offset="1" stop-color="#4f5bd5"/></linearGradient></defs><rect x="1" y="1" width="22" height="22" rx="6.5" fill="url(#igg)"/><rect x="5.5" y="5.5" width="13" height="13" rx="4" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="12" cy="12" r="3.2" fill="none" stroke="#fff" stroke-width="1.8"/><circle cx="16.1" cy="7.9" r="1" fill="#fff"/></svg>',
+  wa: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#25D366"/><path d="M12 5.6a6.4 6.4 0 0 0-5.5 9.7l-.8 2.9 3-.8A6.4 6.4 0 1 0 12 5.6z" fill="none" stroke="#fff" stroke-width="1.4"/><path d="M9.7 8.9c.1-.3.3-.3.5-.3h.3c.1 0 .3 0 .4.3l.5 1.2c0 .1 0 .3-.1.4l-.3.4c-.1.1-.1.2 0 .4.4.6.8 1 1.4 1.4.2.1.3.1.4 0l.4-.5c.1-.1.3-.1.4-.1l1.2.6c.2.1.3.1.3.3 0 .3-.1.9-.6 1.1-.4.3-1 .3-1.7.1-1-.4-2.2-1.4-2.8-2.4-.5-.8-.5-1.5-.3-1.9z" fill="#fff"/></svg>',
+  site: '<svg viewBox="0 0 24 24" fill="none" stroke="#bdbdbd" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><ellipse cx="12" cy="12" rx="4.2" ry="10"/><path d="M2.5 9h19M2.5 15h19"/></svg>',
+};
 const openAny = (u) => (/^https:\/\/t\.me\//i.test(u) ? openTgLink(u) : openLink(u));
 const aboutOf = (id) => cityById(id)?.about || {};
 // «@ник» / номер / адрес → полная https-ссылка
@@ -1000,10 +1006,8 @@ const AdminCity = {
     <div class="field" style="margin-top:0"><label>Описание</label><input class="inp" id="c-lead" maxlength="160" placeholder="Игры · Тематические вечера · Частные события" value="${esc(ab.lead || '')}"></div>
     <div class="field"><label>Участников</label><input class="inp" id="c-members" maxlength="20" placeholder="2500+" value="${esc(ab.members || '')}"><p class="hint">Пусто — цифра не показывается.</p></div>
     <div class="field"><label>Соцсети и контакты</label>
-      <input class="inp" id="c-tg" placeholder="Чат в Telegram: https://t.me/… или @ник" value="${esc(ab.tg || '')}">
-      <input class="inp" id="c-ig" placeholder="Instagram: https://instagram.com/… или @ник" value="${esc(ab.ig || '')}">
-      <input class="inp" id="c-wa" placeholder="WhatsApp: номер или ссылка wa.me" value="${esc(ab.wa || '')}">
-      <input class="inp" id="c-site" placeholder="Сайт: https://…" value="${esc(ab.site || '')}">
+      ${[['tg', 'Чат в Telegram — ссылка или @ник'], ['ig', 'Instagram — ссылка или @ник'], ['wa', 'WhatsApp — номер или ссылка wa.me'], ['site', 'Сайт — https://…']]
+        .map(([k, ph]) => `<div class="inp-ic">${SOC_ICON[k]}<input class="inp" id="c-${k}" placeholder="${ph}" value="${esc(ab[k] || '')}"></div>`).join('')}
       <p class="hint">Пустые поля не показываются в приложении.</p></div>
     ${id !== 'new' ? '<button class="btn ghost danger" id="c-del">Удалить город</button>' : ''}`;
   },
