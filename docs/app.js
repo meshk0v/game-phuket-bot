@@ -223,7 +223,7 @@ function back() {
   go(p);
 }
 function route() {
-  const SCREENS = { city: City, soon: Soon, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, pay: Pay, paydone: PayDone, ask: Ask, coop: Coop, admin: Admin, admincity: AdminCity, adminevent: AdminEvent };
+  const SCREENS = { city: City, soon: Soon, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, custom: Custom, pay: Pay, paydone: PayDone, ask: Ask, coop: Coop, admin: Admin, admincity: AdminCity, adminevent: AdminEvent };
   let full = location.hash.slice(1);
   // Telegram дописывает в адрес #tgWebAppData=… — это не экран; неизвестные адреса тоже ведём на стартовый
   if (!SCREENS[full.split('/')[0]]) full = home();
@@ -767,6 +767,7 @@ const Order = {
   <div class="field" style="margin-top:26px"><label>Что проводим<b id="fcount"></b></label>
     <div class="formats" style="margin-top:0">${FORMATS.map((f) => `
       <button class="fmt ${order.fmts.has(f.n) ? 'on' : ''}" data-f="${f.n}"><span class="d">${f.n}</span><small>${f.s}</small></button>`).join('')}</div></div>
+  <button class="custom-btn" data-go="custom"><span class="ic">✨</span><div><b>Своё мероприятие</b><small>Опишите, что вы задумали, — заявка сразу уйдёт менеджеру</small></div><span class="go">›</span></button>
   <div class="field"><label>Гостей<b id="gv">${order.guests}</b></label><input type="range" id="guests" min="5" max="60" step="1" value="${order.guests}"></div>
   <div class="field"><label>Язык игры</label><div class="seg">${['RU', 'EN'].map((l) => `<button data-l="${l}" class="${order.lang === l ? 'on' : ''}">${l === 'RU' ? 'Русский' : 'English'}</button>`).join('')}</div></div>
   <div class="field"><label>Дата и контакты</label>
@@ -797,21 +798,39 @@ const Order = {
   },
 };
 
+const Custom = {
+  html: () => `
+  ${header()}
+  <p class="cap">Индивидуальный формат</p>
+  <h1 class="d big" style="margin-top:10px">Своё<br><span class="red">мероприятие</span></h1>
+  <p class="lead" style="margin-top:12px">Расскажите, что вы задумали: повод, формат игр, пожелания. Заявка сразу уйдёт менеджеру, и он свяжется с вами.</p>
+  <div class="field"><label>Опишите мероприятие</label><textarea class="inp" id="cu-desc" rows="6" maxlength="1500" placeholder="Например: день рождения на вилле, 20 гостей, хотим Мафию и квиз, ведущий на русском"></textarea></div>
+  <div class="field"><label>Когда и сколько гостей</label>
+    <input class="inp" type="date" id="cu-date">
+    <input class="inp" type="number" id="cu-guests" min="1" max="1000" inputmode="numeric" placeholder="Количество гостей"></div>
+  <div class="field"><label>Как с вами связаться</label>
+    <input class="inp" id="fn" placeholder="Имя" value="${esc(tgUser('name'))}">
+    <input class="inp" id="fc" placeholder="Телефон или @username" value="${esc(tgUser('contact'))}"></div>`,
+  bind: () => {
+    $('#cu-date').min = new Date().toISOString().slice(0, 10);
+    mainButton('Отправить менеджеру', () => {
+      const desc = $('#cu-desc').value.trim(), contact = $('#fc').value.trim();
+      if (!desc) { notify('error'); $('#cu-desc').focus(); return toast('Опишите мероприятие'); }
+      if (!contact) { notify('error'); $('#fc').focus(); return toast('Оставьте контакт для связи'); }
+      sendRequest('custom', { name: $('#fn').value.trim(), contact, message: desc, date: $('#cu-date').value, guests: $('#cu-guests').value }, 'Заявка принята', 'Менеджер свяжется с вами в ближайшее время.');
+    });
+  },
+};
+
 const Club = {
   html: () => {
-    const weekly = EVENTS.length, comm = EVENTS.find((x) => x.blue);
-    const stats = [['2500+', 'участников'], weekly ? [String(weekly), 'игр в неделю'] : null, comm && comm.price === 0 ? ['0 ฿', esc(comm.type || comm.title)] : null].filter(Boolean);
+    const weekly = EVENTS.filter((x) => x.repeat !== 'once').length;
+    const stats = [['2500+', 'участников'], weekly ? [String(weekly), 'игр в неделю'] : null].filter(Boolean);
     return `
   ${header()}
   <h1 class="d big">Game<br><span class="red">Phuket</span></h1>
   <p class="lead" style="margin-top:12px">Игры · Тематические вечера · Частные события</p>
   <div class="stats" style="grid-template-columns:repeat(${stats.length},1fr)">${stats.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('')}</div>
-  ${comm ? `<div class="comm">
-    <span class="cap blue">${WD_FULL[comm.dow]}</span>
-    <h3 class="d" style="margin-top:8px">${esc(comm.title)}</h3>
-    <p>${esc(comm.desc)}</p>
-    <button class="btn white" data-go="event/${esc(comm.id)}">Подробнее</button>
-  </div>` : ''}
   <div class="links">
     <button class="lnk" data-go="coop"><div><b>Сотрудничество</b><small>Площадки, бренды, партнёры</small></div><span>→</span></button>
     <button class="lnk" data-go="ask"><div><b>Задать вопрос</b><small>Ответим в ближайшее время</small></div><span>→</span></button>
@@ -912,7 +931,7 @@ const AdminCity = {
     <h1 class="d big">${id === 'new' ? 'Новый<br><span class="red">город</span>' : esc(c.name)}</h1>
     <div class="field"><label>Название</label><input class="inp" id="c-name" maxlength="60" placeholder="Например: Бангкок" value="${esc(c.name)}"></div>
     <div class="field"><label>Статус</label><div class="seg" id="c-status"><button data-v="active" class="${c.status === 'active' ? 'on' : ''}">Работает</button><button data-v="soon" class="${c.status === 'soon' ? 'on' : ''}">Скоро открытие</button></div></div>
-    <div class="field"><label>Подпись в списке</label><input class="inp" id="c-sub" maxlength="80" placeholder="5 вечеров в неделю" value="${esc(c.sub)}"></div>
+    <div class="field"><label>Подпись в списке</label><input class="inp" id="c-sub" maxlength="80" placeholder="4 вечера в неделю" value="${esc(c.sub)}"></div>
     <div class="field"><label>Часовой пояс (UTC+)</label><input class="inp" id="c-tz" type="number" step="0.5" min="-12" max="14" value="${c.tz}"><p class="hint">Нужен, чтобы время игр и отсчёт считались по местному времени. Пхукет +7, Москва и Петербург +3.</p></div>
     ${id !== 'new' ? '<button class="btn ghost danger" id="c-del">Удалить город</button>' : ''}`;
   },
@@ -958,7 +977,7 @@ const AdminEvent = {
       <input class="inp" id="e-dur" maxlength="120" placeholder="Длительность: до 5 часов" value="${esc(e.dur)}"></div>
     <div class="field"><label>Описание</label><textarea class="inp" id="e-desc" maxlength="1000" placeholder="Пара предложений о мероприятии">${esc(e.desc)}</textarea></div>
     <div class="field">
-      <label class="sw"><input type="checkbox" id="e-blue" ${e.blue ? 'checked' : ''}><i></i><span>Синий акцент <small>(для Community Day и подобных)</small></span></label>
+      <label class="sw"><input type="checkbox" id="e-blue" ${e.blue ? 'checked' : ''}><i></i><span>Синий акцент <small>(для особых событий)</small></span></label>
       <label class="sw"><input type="checkbox" id="e-active" ${e.active !== false ? 'checked' : ''}><i></i><span>Показывать в афише</span></label>
     </div>
     ${id !== 'new' ? '<button class="btn ghost danger" id="e-del">Удалить мероприятие</button>' : ''}`;

@@ -197,11 +197,17 @@ async function request(req, env, send) {
   const b = await req.json().catch(() => ({}));
   const t = (v, max) => String(v ?? '').trim().slice(0, max);
   const type = b.type, contact = t(b.contact, 100), name = t(b.name, 100), message = t(b.message, 1500);
-  if (!['ask', 'coop', 'order'].includes(type)) return send(400, { error: 'Неверный тип заявки' });
+  if (!['ask', 'coop', 'order', 'custom'].includes(type)) return send(400, { error: 'Неверный тип заявки' });
   if (!contact) return send(400, { error: 'Укажите контакт' });
   let head, lines = [];
   if (type === 'ask') { if (!message) return send(400, { error: 'Напишите вопрос' }); head = '❓ <b>Вопрос</b>'; lines = [`💬 ${h(message)}`]; }
   if (type === 'coop') { if (!message) return send(400, { error: 'Опишите предложение' }); head = '🤝 <b>Сотрудничество</b>'; lines = [`💬 ${h(message)}`]; }
+  if (type === 'custom') {
+    if (!message) return send(400, { error: 'Опишите мероприятие' });
+    const guests = Math.round(Number(b.guests));
+    head = '✨ <b>Своё мероприятие</b>';
+    lines = [`💬 ${h(message)}`, ...(guests >= 1 && guests <= 1000 ? [`👥 Гостей: ${guests}`] : []), ...(/^\d{4}-\d{2}-\d{2}$/.test(b.date || '') ? [`📅 Дата: ${h(b.date)}`] : [])];
+  }
   if (type === 'order') {
     const formats = (Array.isArray(b.formats) ? b.formats : []).map((x) => t(x, 30)).filter(Boolean).slice(0, 10);
     if (!formats.length) return send(400, { error: 'Выберите хотя бы одну игру' });
@@ -212,7 +218,7 @@ async function request(req, env, send) {
   const text = [head, '', ...lines, '', `📞 ${h(contact)}${name ? ' (' + h(name) + ')' : ''}`, userLine(user)].join('\n');
   if (!(await deliver(env, user, text))) return send(502, { error: 'Не удалось отправить. Попробуйте позже.' });
   await rate.bump();
-  const ack = { ask: '📨 Вопрос получен. Ответим в ближайшее время.', coop: '📨 Предложение получено. Менеджер свяжется с вами.', order: '📨 Заявка на мероприятие получена. Менеджер свяжется с вами в ближайшее время.' }[type];
+  const ack = { ask: '📨 Вопрос получен. Ответим в ближайшее время.', coop: '📨 Предложение получено. Менеджер свяжется с вами.', order: '📨 Заявка на мероприятие получена. Менеджер свяжется с вами в ближайшее время.', custom: '📨 Заявка на ваше мероприятие получена. Менеджер свяжется с вами в ближайшее время.' }[type];
   await tgCall(env, 'sendMessage', { chat_id: user.id, text: ack });
   return send(200, { ok: true });
 }
