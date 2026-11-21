@@ -938,7 +938,7 @@ const AdminCity = {
     <div class="field"><label>Название</label><input class="inp" id="c-name" maxlength="60" placeholder="Например: Бангкок" value="${esc(c.name)}"></div>
     <div class="field"><label>Статус</label><div class="seg" id="c-status"><button data-v="active" class="${c.status === 'active' ? 'on' : ''}">Работает</button><button data-v="soon" class="${c.status === 'soon' ? 'on' : ''}">Скоро открытие</button></div></div>
     <div class="field"><label>Подпись в списке</label><input class="inp" id="c-sub" maxlength="80" placeholder="4 вечера в неделю" value="${esc(c.sub)}"></div>
-    <div class="field"><label>Часовой пояс (UTC+)</label><input class="inp" id="c-tz" type="number" step="0.5" min="-12" max="14" value="${c.tz}"><p class="hint">Нужен, чтобы время игр и отсчёт считались по местному времени. Пхукет +7, Москва и Петербург +3.</p></div>
+    <div class="field"><label>Часовой пояс (UTC+)</label><input class="inp" id="c-tz" type="number" step="0.5" min="-12" max="14" value="${c.tz}"><p class="hint">Нужен, чтобы время игр и отсчёт считались по местному времени. Пхукет +7, Бали +8, Москва +3.</p></div>
     ${id !== 'new' ? '<button class="btn ghost danger" id="c-del">Удалить город</button>' : ''}`;
   },
   bind: (id) => {

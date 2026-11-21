@@ -8,11 +8,11 @@
       "tz": 7
     },
     {
-      "id": "spb",
-      "name": "Санкт-Петербург",
+      "id": "bali",
+      "name": "Бали",
       "status": "soon",
       "sub": "",
-      "tz": 3
+      "tz": 8
     }
   ],
   "events": [
