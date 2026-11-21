@@ -203,11 +203,46 @@ function mainButton(text, fn) {
     document.body.append(b);
   }
 }
+// Модальное окно в дизайне приложения (вместо системных окон Telegram).
+// Возвращает value нажатой кнопки; при закрытии фоном/«Назад» — dismiss; при переходе на другой экран — '__nav'.
+function modal({ icon = '', title = '', text = '', buttons = [{ text: 'Хорошо', value: true }], dismiss = null }) {
+  return new Promise((resolve) => {
+    sheetClose?.(true);
+    const el = document.createElement('div');
+    el.className = 'modal-wrap';
+    el.innerHTML = `
+      <div class="modal" role="alertdialog" aria-modal="true">
+        ${icon ? `<div class="modal-ic ${icon === '✓' ? 'ok' : 'warn'}">${icon}</div>` : ''}
+        ${title ? `<h3 class="d">${esc(title)}</h3>` : ''}
+        ${text ? `<p>${esc(text)}</p>` : ''}
+        <div class="modal-btns ${buttons.length > 1 ? 'two' : ''}">${buttons.map((b, i) => `<button class="btn ${b.kind === 'ghost' ? 'ghost' : ''}" data-mi="${i}">${esc(b.text)}</button>`).join('')}</div>
+      </div>`;
+    document.body.append(el);
+    requestAnimationFrame(() => el.classList.add('on'));
+    const mbWasVisible = inTG && tg.MainButton.isVisible;
+    if (mbWasVisible) tg.MainButton.hide();      // нативная кнопка Telegram не должна нажиматься под окном
+    if (inTG) tg.BackButton.show();
+    let closed = false;
+    const close = (value) => {
+      if (closed) return;
+      closed = true; sheetClose = null;
+      el.classList.remove('on'); setTimeout(() => el.remove(), 250);
+      if (value !== '__nav') {
+        if (inTG && TABS.includes(cur.split('/')[0])) tg.BackButton.hide();
+        if (mbWasVisible) tg.MainButton.show();
+      }
+      resolve(value);
+    };
+    sheetClose = (instant) => close(instant ? '__nav' : dismiss);
+    el.addEventListener('click', (e) => { if (e.target === el) { haptic(); close(dismiss); } });
+    $$('[data-mi]', el).forEach((b) => b.addEventListener('click', () => { haptic(); close(buttons[+b.dataset.mi].value); }));
+  });
+}
+
 function done(title, msg, after) {
   notify('success');
   const fin = after || back; // формы-вкладки остаются на месте, остальные экраны — назад
-  if (inTG && tg.showPopup) tg.showPopup({ title, message: msg, buttons: [{ type: 'ok' }] }, fin);
-  else { toast(title + ' ✓'); setTimeout(fin, 900); }
+  modal({ icon: '✓', title, text: msg, buttons: [{ text: 'Хорошо', value: 'ok' }], dismiss: 'ok' }).then((v) => { if (v !== '__nav') fin(); });
 }
 
 function resetCity() { haptic(); city = ''; store.set(CITY_KEY, ''); go('city'); }
@@ -873,7 +908,8 @@ const Coop = formScreen('coop', 'Для площадок и брендов', 'Д
 
 /* ---------------- админка (только для ADMIN_IDS) ---------------- */
 let admTab = 'events', admCity = '';
-const confirmBox = (msg) => new Promise((res) => (inTG && tg.showConfirm ? tg.showConfirm(msg, res) : res(confirm(msg))));
+const confirmBox = (text, { title = 'Вы уверены?', ok = 'Удалить' } = {}) =>
+  modal({ icon: '!', title, text, buttons: [{ text: 'Отмена', kind: 'ghost', value: false }, { text: ok, value: true }], dismiss: false }).then((v) => v === true);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 4);
 const evWhen = (e) => (e.repeat === 'once'
@@ -953,7 +989,7 @@ const AdminCity = {
     });
     $('#c-del')?.addEventListener('click', async () => {
       const n = CFG.events.filter((e) => e.city === id).length;
-      if (!(await confirmBox(`Удалить город «${cityById(id).name}»${n ? ` и его мероприятия (${n})` : ''}?`))) return;
+      if (!(await confirmBox(`«${cityById(id).name}» исчезнет из списка городов${n ? `, вместе с ним удалятся мероприятия (${n})` : ''}.`, { title: 'Удалить город?' }))) return;
       const next = clone(CFG); next.cities = next.cities.filter((c) => c.id !== id); next.events = next.events.filter((e) => e.city !== id);
       if (await saveCfg(next)) { if (city === id) { city = ''; store.set(CITY_KEY, ''); } toast('Город удалён'); back(); }
     });
@@ -1005,7 +1041,7 @@ const AdminEvent = {
       if (await saveCfg(next)) { admCity = row.city; toast('Сохранено'); back(); }
     });
     $('#e-del')?.addEventListener('click', async () => {
-      if (!(await confirmBox('Удалить это мероприятие?'))) return;
+      if (!(await confirmBox('Мероприятие исчезнет из афиши. Это действие нельзя отменить.', { title: 'Удалить мероприятие?' }))) return;
       const next = clone(CFG); next.events = next.events.filter((x) => x.id !== id);
       if (await saveCfg(next)) { toast('Удалено'); back(); }
     });

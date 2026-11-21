@@ -318,3 +318,18 @@ html:not([data-mobile]) .fixed{top:auto;bottom:calc(var(--bot) + 16px);transform
 html:not([data-mobile]) body:not(.notabs) .fixed{bottom:calc(var(--bot) + 84px)}
 html:not([data-mobile]) .fixed:active{transform:scale(.98)}
 html:not([data-mobile]) .toast{top:auto;bottom:calc(var(--bot) + 160px)}
+
+/* ---------- модальное окно ---------- */
+.modal-wrap{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:24px;background:rgba(0,0,0,0);transition:background .25s,backdrop-filter .25s}
+.modal-wrap.on{background:rgba(0,0,0,.74);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.modal{position:relative;overflow:hidden;width:100%;max-width:360px;background:#0b0b0b;border:1px solid var(--line2);border-radius:24px;padding:28px 22px 20px;text-align:center;opacity:0;transform:translateY(18px) scale(.96);transition:opacity .25s,transform .3s cubic-bezier(.2,.8,.2,1)}
+.modal::before{content:'';position:absolute;left:0;right:0;top:0;height:140px;background:radial-gradient(80% 100% at 50% 0%,rgba(255,43,34,.22),transparent);pointer-events:none}
+.modal-wrap.on .modal{opacity:1;transform:none}
+.modal>*{position:relative}
+.modal-ic{width:64px;height:64px;margin:0 auto 16px;border-radius:50%;display:grid;place-items:center;font:700 30px/1 var(--display)}
+.modal-ic.ok{background:var(--red);box-shadow:0 0 0 8px rgba(255,43,34,.16),0 0 40px rgba(255,43,34,.45)}
+.modal-ic.warn{border:2px solid var(--red);color:var(--red)}
+.modal h3{font-size:30px}
+.modal p{color:#c9c9c9;font-size:15px;margin-top:10px;white-space:pre-line}
+.modal-btns{display:grid;gap:8px;margin-top:22px}
+.modal-btns.two{grid-template-columns:1fr 1fr}
