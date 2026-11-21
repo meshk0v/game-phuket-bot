@@ -52,7 +52,7 @@ function sanitize(c) {
     if (!cityIds.has(e.city)) bad('Мероприятие без города');
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(e.time)) bad('Неверное время');
     const o = { id: e.id, city: e.city, repeat: e.repeat === 'once' ? 'once' : 'weekly', time: e.time, type: str(e.type, 40), title: str(e.title, 80),
-      place: str(e.place, 100), area: str(e.area, 80), dur: str(e.dur, 40), desc: str(e.desc, 1000), blue: !!e.blue, active: e.active !== false, price: null };
+      place: str(e.place, 100), area: str(e.area, 80), dur: str(e.dur, 120), desc: str(e.desc, 1000), blue: !!e.blue, active: e.active !== false, price: null };
     if (!o.title) bad('У мероприятия нет названия');
     if (o.repeat === 'once') {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(e.date) || Number.isNaN(Date.parse(e.date))) bad('Неверная дата');
