@@ -88,7 +88,7 @@ const fullName = (u) => [u.first_name, u.last_name].filter(Boolean).join(' ') ||
 const profileUrl = (u) => (u.username ? `https://t.me/${u.username}` : `tg://user?id=${u.id}`);
 // «Имя» кликабельно по ID даже без @username
 const who = (u) => `👤 <a href="tg://user?id=${u.id}">${h(fullName(u))}</a>${u.username ? ' · @' + h(u.username) : ''}\n🆔 <code>${u.id}</code>`;
-const profileRow = (u) => [{ text: '👤 Профиль', url: profileUrl(u) }, { text: '📋 Скопировать ID', copy_text: { text: String(u.id) } }];
+const profileRow = (u) => [{ text: '👤 Профиль', url: profileUrl(u) }];
 const pad2 = (n) => String(n).padStart(2, '0');
 const tgTime = (unix, fmt, label) => `<tg-time unix="${unix}" format="${fmt}">${h(label)}</tg-time>`;
 const quote = (s) => `<blockquote${s.length > 300 ? ' expandable' : ''}>${h(s)}</blockquote>`;
