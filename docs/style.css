@@ -310,3 +310,11 @@ button.pill{font:inherit;color:inherit;background:none;cursor:pointer}
 .custom-btn .go{margin-left:auto;color:var(--red);font-size:22px}
 
 .fact .fnote{display:block;margin-top:4px;color:var(--mute);font:400 13px/1.35 Inter}
+
+/* Десктоп и веб: нижнее меню и кнопки прижаты к низу окна. На телефонах — к высоте окна Telegram (см. выше). */
+html:not([data-mobile]){--bot:0px}
+html:not([data-mobile]) .tabs{top:auto;bottom:0;transform:none}
+html:not([data-mobile]) .fixed{top:auto;bottom:calc(var(--bot) + 16px);transform:none}
+html:not([data-mobile]) body:not(.notabs) .fixed{bottom:calc(var(--bot) + 84px)}
+html:not([data-mobile]) .fixed:active{transform:scale(.98)}
+html:not([data-mobile]) .toast{top:auto;bottom:calc(var(--bot) + 160px)}

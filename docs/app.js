@@ -272,7 +272,7 @@ const City = {
     <div>
       <p class="cap">Где ты сейчас?</p>
       <div class="cities">${CFG.cities.length ? CFG.cities.map((c, i) => `
-        <button class="city ${i === first ? 'hot' : ''}" data-city="${esc(c.id)}"><div><div class="d">${esc(c.name)}</div><small>${c.status === 'active' ? esc(c.sub || 'афиша и записи') : 'скоро открытие'}</small></div><span class="arrow">→</span></button>`).join('')
+        <button class="city ${i === first ? 'hot' : ''}" data-city="${esc(c.id)}"><div><div class="d">${esc(c.name)}</div>${c.status === 'active' ? '' : '<small>скоро открытие</small>'}</div><span class="arrow">→</span></button>`).join('')
         : '<p class="mute">Города пока не добавлены.</p>'}
       </div>
     </div>
@@ -688,7 +688,7 @@ function openCitySheet() {
       <div class="role-h"><span class="cap">Где вы сейчас?</span><h2 class="d">Выберите <span class="red">город</span></h2></div>
       <div class="pms" style="margin-top:16px">${CFG.cities.map((c) => `
         <button class="pm ${c.id === city ? 'cur' : ''}" data-pc="${esc(c.id)}"><span class="ic">${c.status === 'active' ? '📍' : '⏳'}</span>
-          <div><b>${esc(c.name)}</b><small>${c.status === 'active' ? esc(c.sub || 'афиша и записи') : 'скоро открытие'}</small></div>
+          <div><b>${esc(c.name)}</b>${c.status === 'active' ? '' : '<small>скоро открытие</small>'}</div>
           ${c.id === city ? '<span class="go" style="color:var(--red)">✓</span>' : ''}</button>`).join('')}
       </div>
     </div>`;
@@ -931,13 +931,12 @@ const Admin = {
 
 const AdminCity = {
   html: (id) => {
-    const c = id === 'new' ? { name: '', sub: '', status: 'active', tz: 7 } : cityById(id);
+    const c = id === 'new' ? { name: '', status: 'active', tz: 7 } : cityById(id);
     if (!c) return '<div class="empty"><b class="d">Город не найден</b></div>';
     return `
     <h1 class="d big">${id === 'new' ? 'Новый<br><span class="red">город</span>' : esc(c.name)}</h1>
     <div class="field"><label>Название</label><input class="inp" id="c-name" maxlength="60" placeholder="Например: Бангкок" value="${esc(c.name)}"></div>
     <div class="field"><label>Статус</label><div class="seg" id="c-status"><button data-v="active" class="${c.status === 'active' ? 'on' : ''}">Работает</button><button data-v="soon" class="${c.status === 'soon' ? 'on' : ''}">Скоро открытие</button></div></div>
-    <div class="field"><label>Подпись в списке</label><input class="inp" id="c-sub" maxlength="80" placeholder="4 вечера в неделю" value="${esc(c.sub)}"></div>
     <div class="field"><label>Часовой пояс (UTC+)</label><input class="inp" id="c-tz" type="number" step="0.5" min="-12" max="14" value="${c.tz}"><p class="hint">Нужен, чтобы время игр и отсчёт считались по местному времени. Пхукет +7, Бали +8, Москва +3.</p></div>
     ${id !== 'new' ? '<button class="btn ghost danger" id="c-del">Удалить город</button>' : ''}`;
   },
@@ -948,7 +947,7 @@ const AdminCity = {
       const name = $('#c-name').value.trim();
       if (!name) { notify('error'); return toast('Введите название города'); }
       const next = clone(CFG), tz = Number($('#c-tz').value);
-      const row = { id: id === 'new' ? newId('c') : id, name, status, sub: $('#c-sub').value.trim(), tz: Number.isFinite(tz) ? tz : 0 };
+      const row = { id: id === 'new' ? newId('c') : id, name, status, sub: '', tz: Number.isFinite(tz) ? tz : 0 };
       if (id === 'new') next.cities.push(row); else next.cities[next.cities.findIndex((c) => c.id === id)] = row;
       if (await saveCfg(next)) { toast('Сохранено'); back(); }
     });
@@ -1023,6 +1022,7 @@ function tgUser(k) {
 /* ---------------- старт ---------------- */
 (async () => {
   if (tg) {
+    if (/^(ios|android|android_x)$/.test(tg.platform)) document.documentElement.dataset.mobile = '1';
     tg.ready(); tg.expand();
     // Полноэкранный режим (Bot API 8.0+): на телефонах прячет шапку Telegram.
     // Отступы сверху берутся из --tg-safe-area / --tg-content-safe-area (кнопки «Закрыть» и «⋯» поверх контента).
