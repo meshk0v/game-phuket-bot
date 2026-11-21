@@ -13,6 +13,7 @@ const MON = ['января', 'февраля', 'марта', 'апреля', 'м
 /* ---------------- конфиг: города и афиша (редактируется в админке) ---------------- */
 const API = (window.GP_API || '').replace(/\/$/, '');
 let CFG = { cities: [], events: [] }, REV = 0, API_OK = false, IS_ADMIN = false;
+let MY = []; // мои записи: { e: id мероприятия, d: дата, k: 'paid' | 'manager', c: подтверждено }
 let EVENTS = [];
 const cityById = (id) => CFG.cities.find((c) => c.id === id);
 const pad = (n) => String(n).padStart(2, '0');
@@ -31,7 +32,14 @@ async function loadConfig() {
     try { CFG = JSON.parse(ls.get('gp_cfg')); } catch {}               // последняя удачная копия с сервера
     if (!CFG?.cities?.length) CFG = (await getJSON('default-config.json')).j || { cities: [], events: [] }; // встроенная афиша
   }
-  if (inTG && API_OK) IS_ADMIN = !!(await getJSON(API + '/api/me', { method: 'POST', headers: { 'X-Init-Data': tg.initData } })).j?.isAdmin;
+  if (inTG && API_OK) {
+    const [me, my] = await Promise.all([
+      getJSON(API + '/api/me', { method: 'POST', headers: { 'X-Init-Data': tg.initData } }),
+      getJSON(API + '/api/my', { headers: { 'X-Init-Data': tg.initData } }),
+    ]);
+    IS_ADMIN = !!me.j?.isAdmin;
+    MY = my.j?.items || [];
+  }
 }
 
 // Ближайшие даты мероприятий выбранного города. Время — по часовому поясу города.
@@ -59,6 +67,9 @@ function buildEvents() {
   }
   return out.sort((x, y) => x.ts - y.ts);
 }
+// запись пользователя на конкретную дату мероприятия
+const myReg = (e) => MY.find((x) => x.e === e.id && x.d === `${e.date.getUTCFullYear()}-${pad(e.date.getUTCMonth() + 1)}-${pad(e.date.getUTCDate())}`);
+const myBadge = (r) => (r.k === 'manager' ? '<span class="booked wait">⏳ Заявка у менеджера</span>' : `<span class="booked">✓ Вы записаны${r.c ? ' · подтверждено' : ''}</span>`);
 const fmtDate = (e) => `${e.date.getUTCDate()} ${MON[e.date.getUTCMonth()]}`;
 const priceTxt = (p) => (p === 0 ? 'Бесплатно' : p === null || p === undefined || p === '' ? 'Уточняйте' : `${p} ฿`);
 
@@ -389,7 +400,7 @@ const Afisha = {
     <div id="feat">${feature(sel)}</div>
     <div class="sec"><h3 class="d">Вся неделя</h3></div>
     ${EVENTS.map((e) => `
-      <button class="ev ${e.blue ? 'bl' : ''}" data-go="event/${esc(e.id)}">
+      <button class="ev ${e.blue ? 'bl' : ''} ${myReg(e) ? 'is-booked' : ''}" data-go="event/${esc(e.id)}">${myReg(e) ? myBadge(myReg(e)) : ''}
         <div class="day">${WD_FULL[e.dow]}, ${fmtDate(e)}</div>
         <div class="ttl">${esc(e.type || e.title)}</div>
         <div class="meta"><b>${e.time}</b> ${esc(e.place)}${e.area && !e.blue ? ', ' + esc(e.area) : ''}</div>
@@ -421,12 +432,20 @@ function feature(e) {
     <h2 class="d">${esc(e.title)}</h2>
     <div class="where">${e.time} · ${esc(e.place)} · <b>${priceTxt(e.price)}</b></div>
     <div class="count" data-ts="${e.ts}"><div><b>–</b><span>дн</span></div><div><b>–</b><span>час</span></div><div><b>–</b><span>мин</span></div><div><b>–</b><span>сек</span></div></div>
+    ${myReg(e) ? `<div class="feat-booked">${myBadge(myReg(e))}</div>` : `<button class="btn feat-btn" data-book="${esc(e.id)}">Записаться</button>`}
   </div>`;
 }
 let tick;
 function bindFeature() {
   const f = $('.feature');
   f.addEventListener('click', () => { haptic(); go(f.dataset.feat); });
+  $('[data-book]', f)?.addEventListener('click', (ev) => {
+    ev.stopPropagation(); haptic('medium');
+    const e = EVENTS.find((x) => x.id === ev.currentTarget.dataset.book); if (!e) return;
+    reg = { id: e.id, n: 1 };
+    if (e.price === 0) return sendRegistration(e, 1, 'free');
+    go(`pay/${e.id}`);
+  });
   const c = $('.count'), ts = +c.dataset.ts;
   const upd = () => {
     let s = Math.max(0, Math.floor((ts - Date.now()) / 1000));
@@ -452,14 +471,15 @@ const EventPage = {
       <div class="fact"><span>Стоимость</span><b>${priceTxt(e.price)}</b></div>
       ${e.dur ? (() => { const [main, ...rest] = e.dur.split(' · '), note = rest.join(' · '); const long = !note && main.length > 18; return `<div class="fact ${note || long ? 'wide' : ''}"><span>Длительность</span><b class="${long ? 'long' : ''}">${esc(main)}</b>${note ? `<small class="fnote">${esc(note)}</small>` : ''}</div>`; })() : ''}
     </div>
+    ${myReg(e) ? `<div class="booked-box">${myBadge(myReg(e))}<p>${myReg(e).k === 'manager' ? 'Менеджер свяжется с вами, чтобы помочь с оплатой.' : 'Ждём вас на игре! Если планы изменились — напишите нам.'}</p></div>` : `
     <div class="stepper"><div><div style="font-weight:500">Сколько вас?</div><div class="mute" style="font-size:12px">можно с друзьями</div></div>
       <div class="ctl"><button data-s="-1">−</button><output id="cnt">1</output><button data-s="1">+</button></div></div>
-    ${e.price ? `<div class="total"><span class="mute">Итого</span><b id="sum">${e.price} ฿</b></div>` : ''}
-    <button class="btn ghost" style="margin-top:18px" data-go="ask">Задать вопрос</button>`;
+    ${e.price ? `<div class="total"><span class="mute">Итого</span><b id="sum">${e.price} ฿</b></div>` : ''}`}
+    <button class="btn ghost" style="margin-top:18px" data-go="ask/${esc(e.id)}">Задать вопрос по этой игре</button>`;
   },
   bind: (id) => {
     const e = EVENTS.find((x) => x.id === id) || EVENTS[0];
-    if (!e) return;
+    if (!e || myReg(e)) return; // уже записан — кнопки «Записаться» нет
     let n = 1;
     const label = () => `Записаться${n > 1 ? ` · ${n} чел.` : ''}`;
     $$('[data-s]').forEach((b) => b.addEventListener('click', () => {
@@ -551,6 +571,7 @@ async function sendRegistration(e, n, method, comment = '') {
   tg?.MainButton.hideProgress?.(); if (fb) { fb.disabled = false; fb.textContent = fb.dataset.t || 'Отправить'; }
   if (!r.ok) { notify('error'); return toast(r.j?.error || 'Не удалось отправить. Проверьте интернет и повторите'); }
   notify('success'); receipt = null;
+  MY = MY.filter((x) => !(x.e === e.id && x.d === isoDay(e))).concat({ e: e.id, d: isoDay(e), k: r.j.kind === 'manager' ? 'manager' : 'paid', c: false });
   go(`paydone/${e.id}/${r.j.kind}`);
 }
 
@@ -596,10 +617,17 @@ const Pay = {
         usdt && ['usdt', '₮', 'Криптовалюта', `${usdt * n} USDT · ${esc(pay.usdt.network || 'TRC-20')}`],
         ['manager', '💬', 'Нет такого способа', 'Связаться с менеджером'],
       ].filter(Boolean);
-      box.innerHTML = `<div class="sec" style="margin-top:22px"><h3 class="d">Способ оплаты</h3></div>
+      box.innerHTML = `<div class="stepper" style="margin-top:20px"><div><div style="font-weight:500">Сколько вас?</div><div class="mute" style="font-size:12px">можно с друзьями</div></div>
+          <div class="ctl"><button data-pn="-1">−</button><output>${n}</output><button data-pn="1">+</button></div></div>
+        <div class="sec" style="margin-top:22px"><h3 class="d">Способ оплаты</h3></div>
         <div class="pms">${m.map(([k, ic, t, s]) => `<button class="pm ${k === 'manager' ? 'alt' : ''}" data-pm="${k}"><span class="ic">${ic}</span><div><b>${t}</b><small>${s}</small></div><span class="go">›</span></button>`).join('')}</div>
         ${pay ? '' : '<p class="hint" style="margin-top:12px">Реквизиты недоступны. Откройте приложение из Telegram.</p>'}`;
       $$('[data-pm]').forEach((b) => b.addEventListener('click', () => { haptic(); go(`pay/${id}/${b.dataset.pm}`); }));
+      $$('[data-pn]').forEach((b) => b.addEventListener('click', () => {
+        const v = Math.min(10, Math.max(1, reg.n + +b.dataset.pn));
+        if (v === reg.n) return notify('warning');
+        hapticSel(); reg.n = v; route(); // перерисуем суммы
+      }));
       return;
     }
 
@@ -915,7 +943,9 @@ const Club = {
 
 function formScreen(type, cap, title, red, lead, ph, ok) {
   return {
-    html: () => `
+    html: (arg) => {
+      const e = type === 'ask' && arg ? EVENTS.find((x) => x.id === arg) : null;
+      return `
     ${header()}
     <p class="cap">${cap}</p>
     <h1 class="d big" style="margin-top:10px">${title}<br><span class="red">${red}</span></h1>
@@ -923,10 +953,13 @@ function formScreen(type, cap, title, red, lead, ph, ok) {
     <div class="field"><label>Как к вам обращаться</label>
       <input class="inp" id="fn" placeholder="Имя" value="${tgUser('name')}">
       <input class="inp" id="fc" placeholder="Телефон или @username" value="${tgUser('contact')}"></div>
-    <div class="field"><label>Сообщение</label><textarea class="inp" id="fm" placeholder="${ph}"></textarea></div>`,
-    bind: () => mainButton('Отправить', () => {
+    ${e ? `<div class="about-game"><span class="cap">Вопрос по игре</span><b class="d">${esc(e.title)}</b><small>${WD_FULL[e.dow]}, ${fmtDate(e)} · ${e.time} · ${esc(e.place)}</small></div>` : ''}
+    <div class="field"><label>Сообщение</label><textarea class="inp" id="fm" placeholder="${ph}"></textarea></div>`;
+    },
+    bind: (arg) => mainButton('Отправить', () => {
       if (!$('#fc').value.trim() || !$('#fm').value.trim()) { notify('error'); return toast('Заполните контакт и сообщение'); }
-      sendRequest(type, { name: $('#fn').value.trim(), contact: $('#fc').value.trim(), message: $('#fm').value.trim() }, 'Отправлено', ok);
+      const e = type === 'ask' && arg ? EVENTS.find((x) => x.id === arg) : null;
+      sendRequest(type, { name: $('#fn').value.trim(), contact: $('#fc').value.trim(), message: $('#fm').value.trim(), ...(e ? { eventId: e.id, date: isoDay(e) } : {}) }, 'Отправлено', ok);
     }),
   };
 }

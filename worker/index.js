@@ -195,6 +195,10 @@ async function register(req, env, send) {
   const delivered = await deliver(env, user, text, hasFile ? file : null, markup);
   if (!delivered) return send(502, { error: 'Не удалось отправить заявку менеджеру. Попробуйте позже.' });
   await rate.bump();
+  // мои записи — чтобы приложение показывало «Вы записаны» вместо кнопки
+  const myKey = `my:${user.id}`, mine = ((await env.CONFIG.get(myKey, 'json')) || []).filter((x) => !(x.e === ev.id && x.d === date));
+  mine.push({ e: ev.id, d: date, k: kind, r: rid });
+  await env.CONFIG.put(myKey, JSON.stringify(mine.slice(-30)), { expirationTtl: 120 * 86400 });
 
   // подтверждение клиенту в чат с ботом (если не получится — не страшно)
   const ack = method === 'manager'
@@ -216,7 +220,21 @@ async function request(req, env, send) {
   if (!['ask', 'coop', 'order', 'custom'].includes(type)) return send(400, { error: 'Неверный тип заявки' });
   if (!contact) return send(400, { error: 'Укажите контакт' });
   let head, lines = [];
-  if (type === 'ask') { if (!message) return send(400, { error: 'Напишите вопрос' }); head = '❓ <b>Вопрос</b>'; lines = [quote(message)]; }
+  // вопрос по конкретной игре: проверяем мероприятие по конфигу, дату — по формату
+  let about = '';
+  if (b.eventId) {
+    const st = await readState(env), ev = st.config.events.find((e) => e.id === b.eventId);
+    if (ev) {
+      const city = st.config.cities.find((c) => c.id === ev.city);
+      let when = ev.time;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(b.date || '') && !Number.isNaN(Date.parse(b.date))) {
+        const d = new Date(b.date + 'T00:00:00Z');
+        when = `${WD_FULL[d.getUTCDay()]}, ${d.getUTCDate()} ${MON[d.getUTCMonth()]}, ${ev.time}`;
+      }
+      about = `<blockquote>🎭 <b>${h(ev.title)}</b>\n📅 ${h(when)}\n📍 ${h(ev.place)}${city ? ' (' + h(city.name) + ')' : ''}</blockquote>`;
+    }
+  }
+  if (type === 'ask') { if (!message) return send(400, { error: 'Напишите вопрос' }); head = about ? '❓ <b>Вопрос по игре</b>' : '❓ <b>Вопрос</b>'; lines = [...(about ? [about, ''] : []), quote(message)]; }
   if (type === 'coop') { if (!message) return send(400, { error: 'Опишите предложение' }); head = '🤝 <b>Сотрудничество</b>'; lines = [quote(message)]; }
   if (type === 'custom') {
     if (!message) return send(400, { error: 'Опишите мероприятие' });
@@ -265,6 +283,8 @@ async function onCallback(env, q) {
   const by = fullName(q.from), now = Date.now(), unix = Math.floor(now / 1000), bk = new Date(now + 7 * 3600e3);
   rec.by = by;
   await env.CONFIG.put('reg:' + id, JSON.stringify(rec), { expirationTtl: 60 * 86400 });
+  const myKey = `my:${rec.uid}`, mine = (await env.CONFIG.get(myKey, 'json')) || [];
+  if (mine.some((x) => x.r === id)) await env.CONFIG.put(myKey, JSON.stringify(mine.map((x) => (x.r === id ? { ...x, c: 1 } : x))), { expirationTtl: 120 * 86400 });
   const line = `${rec.kind === 'manager' ? '✅ <b>Обработано</b>' : '✅ <b>Подтверждено</b>'} · ${h(by)} · ${pad2(bk.getUTCDate())}.${pad2(bk.getUTCMonth() + 1)} ${pad2(bk.getUTCHours())}:${pad2(bk.getUTCMinutes())}`;
   const body = { chat_id: q.message.chat.id, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: { inline_keyboard: [profileRow({ id: rec.uid, username: rec.uname })] } };
   await tgJson(env, rec.file ? 'editMessageCaption' : 'editMessageText', { ...body, ...(rec.file ? { caption: `${rec.html}\n\n${line}` } : { text: `${rec.html}\n\n${line}` }) });
@@ -309,6 +329,12 @@ export default {
       }
       if (req.method === 'POST' && url.pathname === '/api/register') return await register(req, env, send);
       if (req.method === 'POST' && url.pathname === '/api/request') return await request(req, env, send);
+      if (req.method === 'GET' && url.pathname === '/api/my') {
+        const u = await userOf(req, env);
+        if (!u) return send(401, { error: 'Откройте приложение из Telegram' });
+        const today = new Date(Date.now() - 86400e3).toISOString().slice(0, 10);
+        return send(200, { items: ((await env.CONFIG.get(`my:${u.id}`, 'json')) || []).filter((x) => x.d >= today).map(({ e, d, k, c }) => ({ e, d, k, c: !!c })) });
+      }
       if (req.method === 'GET' && url.pathname === '/api/payments') {
         if (!(await userOf(req, env))) return send(401, { error: 'Откройте приложение из Telegram' });
         const p = (await env.CONFIG.get('payments', 'json')) || {};

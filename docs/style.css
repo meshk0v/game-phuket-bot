@@ -339,3 +339,18 @@ html:not([data-mobile]) .toast{top:auto;bottom:calc(var(--bot) + 160px)}
 .inp-ic+.inp-ic{margin-top:8px}
 .inp-ic svg{position:absolute;left:14px;top:50%;width:24px;height:24px;transform:translateY(-50%);pointer-events:none}
 .inp-ic .inp{padding-left:50px}
+
+.feat-btn{margin-top:14px;position:relative}
+
+/* отметка «Вы записаны» */
+.booked{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;background:rgba(43,182,115,.16);border:1px solid rgba(43,182,115,.5);color:#5fe0a0;font:600 12px Inter;letter-spacing:.02em}
+.booked.wait{background:rgba(255,190,60,.12);border-color:rgba(255,190,60,.45);color:#ffc95c}
+.feat-booked{margin-top:14px;position:relative}
+.feat-booked .booked{font-size:14px;padding:10px 16px}
+.ev.is-booked .booked{position:absolute;right:38px;top:14px;padding:3px 9px;font-size:11px}
+.booked-box{margin-top:20px;border:1px solid rgba(43,182,115,.4);border-radius:16px;padding:16px;background:rgba(43,182,115,.06)}
+.booked-box p{color:#bdbdbd;font-size:14px;margin-top:10px}
+
+.about-game{margin-top:20px;border:1px solid var(--line2);border-left:3px solid var(--red);border-radius:14px;padding:12px 14px;background:var(--s1)}
+.about-game b{display:block;font-size:20px;margin:6px 0 2px}
+.about-game small{color:var(--mute);font-size:13px}
