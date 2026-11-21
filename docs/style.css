@@ -296,3 +296,7 @@ select.inp{-webkit-appearance:none;appearance:none;background-image:url("data:im
 .done h1{font-size:54px}.done .lead{margin-top:12px}
 .ticket{margin:26px 0 12px;border:1px solid var(--line2);border-radius:18px;padding:18px;background:var(--s1);text-align:left}
 .ticket b{display:block;font-size:24px;margin:8px 0 6px}.ticket p{color:var(--mute);font-size:14px}
+
+button.pill{font:inherit;color:inherit;background:none;cursor:pointer}
+.pill .chev{font-size:10px;color:var(--mute);margin-left:2px}
+.pm.cur{border-color:var(--red);background:linear-gradient(120deg,rgba(255,43,34,.14),var(--s1) 70%)}

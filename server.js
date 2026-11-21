@@ -150,7 +150,7 @@ async function api(method, payload = {}) {
 
 async function onMessage(m) {
   if ((m.text || '').startsWith('/id')) {
-    return api('sendMessage', { chat_id: m.chat.id, text: `Ваш Telegram ID: <code>${m.from.id}</code>\nВпишите его в ADMIN_IDS в .env, чтобы получить доступ к админке.`, parse_mode: 'HTML' });
+    return api('sendMessage', { chat_id: m.chat.id, ...(m.message_thread_id ? { message_thread_id: m.message_thread_id } : {}), text: m.chat.type === 'private' ? `Ваш Telegram ID: <code>${m.from.id}</code>\nВпишите его в ADMIN_IDS в .env, чтобы получить доступ к админке.` : `ID этого чата: <code>${m.chat.id}</code>${m.message_thread_id ? `\nТема: <code>${m.message_thread_id}</code>` : ''}`, parse_mode: 'HTML' });
   }
   if (!(m.text || '').startsWith('/start')) return;
   return api('sendMessage', {

@@ -75,14 +75,59 @@ const MON = ['января', 'февраля', 'марта', 'апреля', 'м
 const WD_FULL = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
 const h = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
 const TG = (env) => env.TELEGRAM_API || 'https://api.telegram.org';
-async function tgCall(env, method, body) {
+async function tgJson(env, method, body) {
   const form = body instanceof FormData;
   try {
     const r = await fetch(`${TG(env)}/bot${env.BOT_TOKEN}/${method}`, { method: 'POST', headers: form ? undefined : { 'Content-Type': 'application/json' }, body: form ? body : JSON.stringify(body) });
-    return !!(await r.json()).ok;
-  } catch { return false; }
+    return await r.json();
+  } catch { return { ok: false, description: 'network error' }; }
 }
+const tgCall = async (env, method, body) => !!(await tgJson(env, method, body)).ok;
 const managers = (env) => (env.MANAGER_IDS || env.ADMIN_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+const fullName = (u) => [u.first_name, u.last_name].filter(Boolean).join(' ') || 'Без имени';
+const userLine = (u) => `👤 <a href="tg://user?id=${u.id}">${h(fullName(u))}</a>${u.username ? ' @' + h(u.username) : ''}\nID: <code>${u.id}</code>`;
+
+// Отправка в одну точку: (chat, thread) — текст или файл с подписью
+async function post(env, chat, thread, text, file) {
+  const base = { chat_id: chat, parse_mode: 'HTML', ...(thread ? { message_thread_id: thread } : {}) };
+  if (!file) return tgJson(env, 'sendMessage', { ...base, text });
+  const isPdf = file.type === 'application/pdf', fd = new FormData();
+  for (const [k, v] of Object.entries({ ...base, caption: text })) fd.append(k, String(v));
+  fd.append(isPdf ? 'document' : 'photo', file, OK_TYPES[file.type]);
+  return tgJson(env, isPdf ? 'sendDocument' : 'sendPhoto', fd);
+}
+// На каждого участника — своя тема в чате менеджеров (id темы хранится в KV)
+async function sendToChat(env, user, text, file) {
+  const chat = env.MANAGER_CHAT_ID;
+  if (!chat) return false;
+  const key = `topic:${chat}:${user.id}`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let thread = attempt === 0 ? Number(await env.CONFIG.get(key)) || null : null, fresh = false;
+    if (!thread) {
+      const t = await tgJson(env, 'createForumTopic', { chat_id: chat, name: (fullName(user) + (user.username ? ' @' + user.username : '')).slice(0, 128) });
+      if (t.ok) { thread = t.result.message_thread_id; await env.CONFIG.put(key, String(thread)); fresh = true; }
+      else if (!/not a forum/i.test(t.description || '')) return false; // нет прав на создание тем и т.п. — запасной путь
+      // иначе чат без тем: пишем в общий поток
+    }
+    if (fresh) await post(env, chat, thread, `🆕 <b>Новый участник</b>\n\n${userLine(user)}${user.language_code ? '\nЯзык: ' + h(user.language_code) : ''}\n\nВсе заявки этого человека будут в этой теме.`);
+    const r = await post(env, chat, thread, text, file);
+    if (r.ok) return true;
+    if (thread && attempt === 0 && /thread not found|TOPIC_DELETED|topic.*(closed|deleted)/i.test(r.description || '')) { await env.CONFIG.delete(key); continue; } // тему удалили — создадим заново
+    return false;
+  }
+  return false;
+}
+// Основной путь — чат с темами; если не вышло — личные сообщения менеджерам
+async function deliver(env, user, text, file) {
+  if (await sendToChat(env, user, text, file)) return 1;
+  let n = 0;
+  for (const id of managers(env)) if ((await post(env, id, null, text, file)).ok) n++;
+  return n;
+}
+async function rateOk(env, user, kind, max) {
+  const key = `rl:${kind}:${user.id}`, used = Number(await env.CONFIG.get(key)) || 0;
+  return { ok: used < max, bump: () => env.CONFIG.put(key, String(used + 1), { expirationTtl: 3600 }) };
+}
 const userOf = (req, env) => validateInitData(req.headers.get('X-Init-Data') || '', env.BOT_TOKEN);
 const OK_TYPES = { 'image/jpeg': 'photo.jpg', 'image/png': 'photo.png', 'image/webp': 'photo.webp', 'application/pdf': 'receipt.pdf' };
 const METHOD_NAME = { thb: 'Тайский счёт (PromptPay)', rub: 'Российский счёт', usdt: 'Крипта (USDT TRC-20)', free: 'Бесплатно', manager: 'Нет возможности оплатить' };
@@ -91,8 +136,8 @@ async function register(req, env, send) {
   const user = await userOf(req, env);
   if (!user) return send(401, { error: 'Откройте приложение из Telegram' });
   if (Number(req.headers.get('Content-Length')) > 12e6) return send(413, { error: 'Файл слишком большой' });
-  const rlKey = `rl:${user.id}`, used = Number(await env.CONFIG.get(rlKey)) || 0;
-  if (used >= 6) return send(429, { error: 'Слишком много заявок, попробуйте через час' });
+  const rate = await rateOk(env, user, 'reg', 6);
+  if (!rate.ok) return send(429, { error: 'Слишком много заявок, попробуйте через час' });
 
   const f = await req.formData();
   const state = await readState(env);
@@ -127,23 +172,13 @@ async function register(req, env, send) {
     head, '',
     `🎭 ${h(ev.title)}`, `📅 ${h(when)}`, `📍 ${h(ev.place)}${ev.area ? ', ' + h(ev.area) : ''}${city ? ' (' + h(city.name) + ')' : ''}`,
     `👥 Человек: ${n}`, `💳 ${METHOD_NAME[method]}${amount ? ' — <b>' + h(amount) + '</b>' : ''}`, '',
-    `👤 <a href="tg://user?id=${user.id}">${h(name)}</a>${user.username ? ' @' + h(user.username) : ''}`, `ID: <code>${user.id}</code>`,
+    userLine(user),
     ...(comment ? ['', `💬 ${h(comment)}`] : []),
   ].join('\n');
 
-  let delivered = 0;
-  for (const id of managers(env)) {
-    let ok;
-    if (hasFile) {
-      const isPdf = file.type === 'application/pdf', fd = new FormData();
-      fd.append('chat_id', id); fd.append('caption', text); fd.append('parse_mode', 'HTML');
-      fd.append(isPdf ? 'document' : 'photo', file, OK_TYPES[file.type]);
-      ok = await tgCall(env, isPdf ? 'sendDocument' : 'sendPhoto', fd);
-    } else ok = await tgCall(env, 'sendMessage', { chat_id: id, text, parse_mode: 'HTML' });
-    if (ok) delivered++;
-  }
+  const delivered = await deliver(env, user, text, hasFile ? file : null);
   if (!delivered) return send(502, { error: 'Не удалось отправить заявку менеджеру. Попробуйте позже.' });
-  await env.CONFIG.put(rlKey, String(used + 1), { expirationTtl: 3600 });
+  await rate.bump();
 
   // подтверждение клиенту в чат с ботом (если не получится — не страшно)
   const ack = method === 'manager'
@@ -151,6 +186,35 @@ async function register(req, env, send) {
     : `✅ <b>Вы записаны на игру!</b>\n\n🎭 ${h(ev.title)}\n📅 ${h(when)}\n📍 ${h(ev.place)}\n\nХорошего дня и до встречи!`;
   await tgCall(env, 'sendMessage', { chat_id: user.id, text: ack, parse_mode: 'HTML' });
   return send(200, { ok: true, kind: method === 'manager' ? 'manager' : 'paid' });
+}
+
+async function request(req, env, send) {
+  const user = await userOf(req, env);
+  if (!user) return send(401, { error: 'Откройте приложение из Telegram' });
+  if (Number(req.headers.get('Content-Length')) > 20000) return send(413, { error: 'Слишком большой запрос' });
+  const rate = await rateOk(env, user, 'req', 10);
+  if (!rate.ok) return send(429, { error: 'Слишком много заявок, попробуйте через час' });
+  const b = await req.json().catch(() => ({}));
+  const t = (v, max) => String(v ?? '').trim().slice(0, max);
+  const type = b.type, contact = t(b.contact, 100), name = t(b.name, 100), message = t(b.message, 1500);
+  if (!['ask', 'coop', 'order'].includes(type)) return send(400, { error: 'Неверный тип заявки' });
+  if (!contact) return send(400, { error: 'Укажите контакт' });
+  let head, lines = [];
+  if (type === 'ask') { if (!message) return send(400, { error: 'Напишите вопрос' }); head = '❓ <b>Вопрос</b>'; lines = [`💬 ${h(message)}`]; }
+  if (type === 'coop') { if (!message) return send(400, { error: 'Опишите предложение' }); head = '🤝 <b>Сотрудничество</b>'; lines = [`💬 ${h(message)}`]; }
+  if (type === 'order') {
+    const formats = (Array.isArray(b.formats) ? b.formats : []).map((x) => t(x, 30)).filter(Boolean).slice(0, 10);
+    if (!formats.length) return send(400, { error: 'Выберите хотя бы одну игру' });
+    const guests = Math.min(500, Math.max(1, Math.round(Number(b.guests)) || 1));
+    head = '🎉 <b>Заказ игр на мероприятие</b>';
+    lines = [`🎮 ${h(formats.join(', '))}`, `👥 Гостей: ${guests}`, `🌐 Язык: ${b.lang === 'EN' ? 'English' : 'Русский'}`, ...(/^\d{4}-\d{2}-\d{2}$/.test(b.date || '') ? [`📅 Дата: ${h(b.date)}`] : []), ...(message ? [`💬 ${h(message)}`] : [])];
+  }
+  const text = [head, '', ...lines, '', `📞 ${h(contact)}${name ? ' (' + h(name) + ')' : ''}`, userLine(user)].join('\n');
+  if (!(await deliver(env, user, text))) return send(502, { error: 'Не удалось отправить. Попробуйте позже.' });
+  await rate.bump();
+  const ack = { ask: '📨 Вопрос получен. Ответим в ближайшее время.', coop: '📨 Предложение получено. Менеджер свяжется с вами.', order: '📨 Заявка на мероприятие получена. Менеджер свяжется с вами в ближайшее время.' }[type];
+  await tgCall(env, 'sendMessage', { chat_id: user.id, text: ack });
+  return send(200, { ok: true });
 }
 
 const readState = async (env) => (await env.CONFIG.get('state', 'json')) || { rev: 1, config: DEFAULT_CFG };
@@ -170,6 +234,7 @@ export default {
       if (req.method === 'GET' && url.pathname === '/api/config') return send(200, await readState(env));
       if (req.method === 'POST' && url.pathname === '/api/me') return send(200, { isAdmin: await isAdmin(req, env) });
       if (req.method === 'POST' && url.pathname === '/api/register') return await register(req, env, send);
+      if (req.method === 'POST' && url.pathname === '/api/request') return await request(req, env, send);
       if (req.method === 'GET' && url.pathname === '/api/payments') {
         if (!(await userOf(req, env))) return send(401, { error: 'Откройте приложение из Telegram' });
         const p = (await env.CONFIG.get('payments', 'json')) || {};

@@ -202,7 +202,7 @@ function mainButton(text, fn) {
 function done(title, msg, after) {
   notify('success');
   const fin = after || back; // формы-вкладки остаются на месте, остальные экраны — назад
-  if (inTG && tg.showPopup) tg.showPopup({ title, message: msg + '\n\nДемо-режим: заявка не отправляется.', buttons: [{ type: 'ok' }] }, fin);
+  if (inTG && tg.showPopup) tg.showPopup({ title, message: msg, buttons: [{ type: 'ok' }] }, fin);
   else { toast(title + ' ✓'); setTimeout(fin, 900); }
 }
 
@@ -304,7 +304,7 @@ const Soon = {
 let selDay = null;
 const Afisha = {
   html: () => {
-    if (!EVENTS.length) return `${header(`<span class="pill"><i></i>${esc(cityById(city).name)}</span>`)}
+    if (!EVENTS.length) return `${header(`<button class="pill" data-pick aria-label="Сменить город"><i></i>${esc(cityById(city).name)}<span class="chev">▾</span></button>`)}
       <div class="ahead"><h1 class="d">Афиша</h1></div>
       <div class="empty"><b class="d">Пока пусто</b><p>В этом городе ещё нет запланированных игр. Загляните позже или напишите нам.</p>
       <button class="btn ghost" data-go="ask">Задать вопрос</button></div>`;
@@ -313,7 +313,7 @@ const Afisha = {
       ? `${first.date.getUTCDate()} – ${fmtDate(last)}` : `${fmtDate(first)} – ${fmtDate(last)}`;
     const sel = EVENTS.find((e) => e.id === selDay) || first;
     return `
-    ${header(`<span class="pill"><i></i>${esc(cityById(city).name)}</span>`)}
+    ${header(`<button class="pill" data-pick aria-label="Сменить город"><i></i>${esc(cityById(city).name)}<span class="chev">▾</span></button>`)}
     <div class="ahead"><h1 class="d">Афиша</h1><div class="range">${range}</div></div>
     <div class="week">${EVENTS.map((e) => `
       <button class="wd ${e.blue ? 'bl' : ''} ${e === sel ? 'on' : ''}" data-day="${esc(e.id)}"><small>${WD[e.dow]}</small><b>${e.date.getUTCDate()}</b></button>`).join('')}
@@ -334,6 +334,8 @@ const Afisha = {
     </button>`;
   },
   bind: () => {
+    $('[data-pick]')?.addEventListener('click', () => { haptic(); openCitySheet(); });
+    if (!EVENTS.length) return;
     $$('[data-day]').forEach((b) => b.addEventListener('click', () => {
       hapticSel(); selDay = b.dataset.day;
       $$('[data-day]').forEach((x) => x.classList.toggle('on', x === b));
@@ -482,6 +484,19 @@ async function sendRegistration(e, n, method, comment = '') {
   if (!r.ok) { notify('error'); return toast(r.j?.error || 'Не удалось отправить. Проверьте интернет и повторите'); }
   notify('success'); receipt = null;
   go(`paydone/${e.id}/${r.j.kind}`);
+}
+
+// Заявки из форм (вопрос, сотрудничество, заказ игр) — в чат менеджеров, под участника создаётся своя тема
+async function sendRequest(type, data, title, okMsg, after) {
+  if (sending) return;
+  if (!API_OK || !inTG) { notify('error'); return toast('Отправка работает только в Telegram'); }
+  sending = true;
+  tg?.MainButton.showProgress?.(); const fb = $('#fbtn'); if (fb) { fb.disabled = true; fb.textContent = 'Отправляем…'; }
+  const r = await getJSON(API + '/api/request', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() }, body: JSON.stringify({ type, ...data }) }, 12000);
+  sending = false;
+  tg?.MainButton.hideProgress?.(); if (fb) { fb.disabled = false; fb.textContent = fb.dataset.t || 'Отправить'; }
+  if (!r.ok) { notify('error'); return toast(r.j?.error || 'Не удалось отправить. Проверьте интернет и повторите'); }
+  done(title, okMsg, after);
 }
 
 const Pay = {
@@ -658,6 +673,43 @@ const Games = {
   },
 };
 
+// Выбор города — выезжающая снизу панель (по нажатию на название города в шапке афиши)
+function openCitySheet() {
+  sheetClose?.(true);
+  const el = document.createElement('div');
+  el.className = 'sheet-wrap';
+  el.innerHTML = `
+    <div class="sheet" role="dialog">
+      <i class="grab"></i><button class="x" aria-label="Закрыть">✕</button>
+      <div class="role-h"><span class="cap">Где вы сейчас?</span><h2 class="d">Выберите <span class="red">город</span></h2></div>
+      <div class="pms" style="margin-top:16px">${CFG.cities.map((c) => `
+        <button class="pm ${c.id === city ? 'cur' : ''}" data-pc="${esc(c.id)}"><span class="ic">${c.status === 'active' ? '📍' : '⏳'}</span>
+          <div><b>${esc(c.name)}</b><small>${c.status === 'active' ? esc(c.sub || 'афиша и записи') : 'скоро открытие'}</small></div>
+          ${c.id === city ? '<span class="go" style="color:var(--red)">✓</span>' : ''}</button>`).join('')}
+      </div>
+    </div>`;
+  document.body.append(el);
+  requestAnimationFrame(() => el.classList.add('on'));
+  const close = (instant) => {
+    sheetClose = null;
+    if (instant) return el.remove();
+    el.classList.remove('on'); setTimeout(() => el.remove(), 300);
+    if (inTG && TABS.includes(cur.split('/')[0])) tg.BackButton.hide();
+  };
+  sheetClose = close;
+  if (inTG) tg.BackButton.show();
+  el.addEventListener('click', (e) => { if (e.target === el) { haptic(); close(); } });
+  $('.x', el).addEventListener('click', () => { haptic(); close(); });
+  $$('[data-pc]', el).forEach((b) => b.addEventListener('click', () => {
+    haptic('medium');
+    const id = b.dataset.pc;
+    close(true);
+    if (id === city) { if (inTG && TABS.includes(cur.split('/')[0])) tg.BackButton.hide(); return; }
+    city = id; store.set(CITY_KEY, id); selDay = null;
+    go(home());
+  }));
+}
+
 // Карточка роли — выезжающая снизу панель
 let sheetClose = null;
 function openRole(id) {
@@ -739,7 +791,8 @@ const Order = {
     mainButton('Отправить заявку', () => {
       if (!order.fmts.size) { notify('error'); return toast('Выберите хотя бы одну игру'); }
       if (!$('#ocontact').value.trim()) { notify('error'); $('#ocontact').focus(); return toast('Оставьте контакт для связи'); }
-      done('Заявка принята', `${[...order.fmts].join(', ')} · ${order.guests} гостей · ${order.lang}. Менеджер свяжется с вами в ближайшее время.`, () => { order.date = order.note = ''; route(); });
+      sendRequest('order', { contact: $('#ocontact').value.trim(), name: tgUser('name'), formats: [...order.fmts], guests: order.guests, lang: order.lang, date: order.date, message: order.note.trim() },
+        'Заявка принята', `${[...order.fmts].join(', ')} · ${order.guests} гостей · ${order.lang}. Менеджер свяжется с вами в ближайшее время.`, () => { order.date = order.note = ''; route(); });
     });
   },
 };
@@ -773,7 +826,7 @@ const Club = {
   },
 };
 
-function formScreen(cap, title, red, lead, ph, ok) {
+function formScreen(type, cap, title, red, lead, ph, ok) {
   return {
     html: () => `
     ${header()}
@@ -786,12 +839,12 @@ function formScreen(cap, title, red, lead, ph, ok) {
     <div class="field"><label>Сообщение</label><textarea class="inp" id="fm" placeholder="${ph}"></textarea></div>`,
     bind: () => mainButton('Отправить', () => {
       if (!$('#fc').value.trim() || !$('#fm').value.trim()) { notify('error'); return toast('Заполните контакт и сообщение'); }
-      done('Отправлено', ok);
+      sendRequest(type, { name: $('#fn').value.trim(), contact: $('#fc').value.trim(), message: $('#fm').value.trim() }, 'Отправлено', ok);
     }),
   };
 }
-const Ask = formScreen('Есть вопрос?', 'Напишите', 'нам', 'Про игры, запись или частное мероприятие — ответим лично.', 'Ваш вопрос', 'Менеджер ответит вам в ближайшее время.');
-const Coop = formScreen('Для площадок и брендов', 'Давайте', 'дружить', 'Мы организуем и проводим развлекательные игры на острове и всегда открыты к взаимовыгодному сотрудничеству.', 'Как вы видите наше сотрудничество?', 'Менеджер свяжется с вами и договорится о встрече.');
+const Ask = formScreen('ask', 'Есть вопрос?', 'Напишите', 'нам', 'Про игры, запись или частное мероприятие — ответим лично.', 'Ваш вопрос', 'Менеджер ответит вам в ближайшее время.');
+const Coop = formScreen('coop', 'Для площадок и брендов', 'Давайте', 'дружить', 'Мы организуем и проводим развлекательные игры на острове и всегда открыты к взаимовыгодному сотрудничеству.', 'Как вы видите наше сотрудничество?', 'Менеджер свяжется с вами и договорится о встрече.');
 
 /* ---------------- админка (только для ADMIN_IDS) ---------------- */
 let admTab = 'events', admCity = '';
