@@ -229,7 +229,12 @@ async function request(req, env, send) {
     head = '🎉 <b>Заказ игр на мероприятие</b>';
     lines = [`<blockquote>🎮 <b>${h(formats.join(', '))}</b>\n👥 Гостей: <b>${guests}</b> · 🌐 ${b.lang === 'EN' ? 'English' : 'Русский'}${/^\d{4}-\d{2}-\d{2}$/.test(b.date || '') ? `\n📅 Дата: <b>${h(b.date)}</b>` : ''}</blockquote>`, ...(message ? ['', quote(message)] : [])];
   }
-  const text = [head, '', ...lines, '', `📞 <b>${h(contact)}</b>${name ? ' · ' + h(name) : ''}`, '', who(user)].join('\n');
+  // контакт и имя из формы показываем, только если они отличаются от профиля Telegram (иначе дублируют строку ниже)
+  const norm = (s) => s.replace(/^@/, '').trim().toLowerCase();
+  const parts = [];
+  if (!(user.username && norm(contact) === norm(user.username))) parts.push(`📞 <b>${h(contact)}</b>`);
+  if (name && norm(name) !== norm(fullName(user))) parts.push(`✍️ ${h(name)}`);
+  const text = [head, '', ...lines, '', ...(parts.length ? [parts.join(' · '), ''] : []), who(user)].join('\n');
   if (!(await deliver(env, user, text, null, { inline_keyboard: [profileRow(user)] }))) return send(502, { error: 'Не удалось отправить. Попробуйте позже.' });
   await rate.bump();
   const ack = { ask: '📨 Вопрос получен. Ответим в ближайшее время.', coop: '📨 Предложение получено. Менеджер свяжется с вами.', order: '📨 Заявка на мероприятие получена. Менеджер свяжется с вами в ближайшее время.', custom: '📨 Заявка на ваше мероприятие получена. Менеджер свяжется с вами в ближайшее время.' }[type];
