@@ -302,7 +302,7 @@ function back() {
   go(p);
 }
 function route() {
-  const SCREENS = { city: City, soon: Soon, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, custom: Custom, pay: Pay, paydone: PayDone, ask: Ask, coop: Coop, admin: Admin, admincity: AdminCity, adminevent: AdminEvent };
+  const SCREENS = { city: City, soon: Soon, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, custom: Custom, pay: Pay, paydone: PayDone, ask: Ask, coop: Coop, admin: Admin, adminevent: AdminEvent };
   let full = location.hash.slice(1);
   // Telegram дописывает в адрес #tgWebAppData=… — это не экран; неизвестные адреса тоже ведём на стартовый
   if (!SCREENS[full.split('/')[0]]) full = home();
@@ -967,7 +967,7 @@ const Ask = formScreen('ask', 'Есть вопрос?', 'Напишите', 'н�
 const Coop = formScreen('coop', 'Для площадок и брендов', 'Давайте', 'дружить', 'Мы организуем и проводим развлекательные игры на острове и всегда открыты к взаимовыгодному сотрудничеству.', 'Как вы видите наше сотрудничество?', 'Менеджер свяжется с вами и договорится о встрече.');
 
 /* ---------------- админка (только для ADMIN_IDS) ---------------- */
-let admTab = 'events', admCity = '';
+let admCity = '';
 const confirmBox = (text, { title = 'Вы уверены?', ok = 'Удалить' } = {}) =>
   modal({ icon: '!', title, text, buttons: [{ text: 'Отмена', kind: 'ghost', value: false }, { text: ok, value: true }], dismiss: false }).then((v) => v === true);
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -992,78 +992,20 @@ const Admin = {
       .sort((a, b) => (a.repeat === b.repeat ? (a.repeat === 'once' ? a.date.localeCompare(b.date) : ((a.dow + 6) % 7) - ((b.dow + 6) % 7)) : a.repeat === 'once' ? 1 : -1) || a.time.localeCompare(b.time));
     return `
     ${header('<span class="pill"><i></i>Админка</span>')}
-    <h1 class="d big" style="font-size:46px">Управление</h1>
-    <div class="seg" style="margin-top:18px"><button data-at="events" class="${admTab === 'events' ? 'on' : ''}">Афиша</button><button data-at="cities" class="${admTab === 'cities' ? 'on' : ''}">Города</button></div>
-    ${admTab === 'events' ? (CFG.cities.length ? `
+    <p class="cap">Управление</p>
+    <h1 class="d big" style="margin-top:8px">Афиша</h1>
+    ${CFG.cities.length ? `
       <div class="chips-row">${CFG.cities.map((c) => `<button class="chip ${c.id === admCity ? 'on' : ''}" data-ac="${esc(c.id)}">${esc(c.name)}</button>`).join('')}</div>
       <div style="margin-top:14px">${evs.length ? evs.map((e) => `
         <button class="ev adm ${e.blue ? 'bl' : ''} ${e.active === false ? 'off' : ''}" data-go="adminevent/${esc(e.id)}">
           <div class="day">${evWhen(e)}</div><div class="ttl">${esc(e.title)}</div>
           <div class="meta">${esc(e.place)} · ${priceTxt(e.price)}${e.active === false ? ' · <b>скрыто</b>' : ''}</div><span class="go">›</span>
         </button>`).join('') : '<p class="mute" style="padding:18px 2px">В этом городе пока нет мероприятий.</p>'}</div>
-      <button class="btn" data-go="adminevent/new">+ Добавить мероприятие</button>` : '<p class="mute" style="padding:18px 2px">Сначала добавьте город.</p>')
-    : `
-      <div style="margin-top:14px">${CFG.cities.map((c, i) => `
-        <div class="ev adm ${c.status === 'soon' ? 'off' : ''}" style="padding-right:96px" data-go="admincity/${esc(c.id)}">
-          <div class="day">${c.status === 'active' ? 'Активен' : 'Скоро'}</div><div class="ttl">${esc(c.name)}</div>
-          <div class="meta">${CFG.events.filter((e) => e.city === c.id).length} мероприятий · UTC${c.tz >= 0 ? '+' : ''}${c.tz}</div>
-          <span class="mv"><i data-mv="${i}:-1" class="${i ? '' : 'dis'}">↑</i><i data-mv="${i}:1" class="${i < CFG.cities.length - 1 ? '' : 'dis'}">↓</i></span>
-        </div>`).join('')}</div>
-      <button class="btn" data-go="admincity/new">+ Добавить город</button>`}
+      <button class="btn" data-go="adminevent/new">+ Добавить мероприятие</button>` : '<p class="mute" style="padding:18px 2px">Городов пока нет.</p>'}
     <p class="cap" style="margin-top:22px;line-height:1.6">${API_OK ? 'Изменения сразу видны всем пользователям.' : 'Нет связи с сервером — сохранить изменения нельзя.'}</p>`;
   },
   bind: () => {
-    $$('[data-at]').forEach((b) => b.addEventListener('click', () => { hapticSel(); admTab = b.dataset.at; route(); }));
     $$('[data-ac]').forEach((b) => b.addEventListener('click', () => { hapticSel(); admCity = b.dataset.ac; route(); }));
-    $$('[data-mv]').forEach((b) => b.addEventListener('click', async (ev) => {
-      ev.stopPropagation();
-      const [i, d] = b.dataset.mv.split(':').map(Number), j = i + d;
-      if (j < 0 || j >= CFG.cities.length) return;
-      const next = clone(CFG); [next.cities[i], next.cities[j]] = [next.cities[j], next.cities[i]];
-      hapticSel(); if (await saveCfg(next)) route();
-    }));
-  },
-};
-
-const AdminCity = {
-  html: (id) => {
-    const c = id === 'new' ? { name: '', status: 'active', tz: 7, about: {} } : cityById(id);
-    if (!c) return '<div class="empty"><b class="d">Город не найден</b></div>';
-    const ab = c.about || {};
-    return `
-    <h1 class="d big">${id === 'new' ? 'Новый<br><span class="red">город</span>' : esc(c.name)}</h1>
-    <div class="field"><label>Название</label><input class="inp" id="c-name" maxlength="60" placeholder="Например: Бангкок" value="${esc(c.name)}"></div>
-    <div class="field"><label>Статус</label><div class="seg" id="c-status"><button data-v="active" class="${c.status === 'active' ? 'on' : ''}">Работает</button><button data-v="soon" class="${c.status === 'soon' ? 'on' : ''}">Скоро открытие</button></div></div>
-    <div class="field"><label>Часовой пояс (UTC+)</label><input class="inp" id="c-tz" type="number" step="0.5" min="-12" max="14" value="${c.tz}"><p class="hint">Нужен, чтобы время игр и отсчёт считались по местному времени. Пхукет +7, Бали +8, Москва +3.</p></div>
-    <div class="sec" style="margin-top:30px"><h3 class="d">О нас</h3><span class="cap">вкладка «О нас»</span></div>
-    <div class="field" style="margin-top:0"><label>Описание</label><input class="inp" id="c-lead" maxlength="160" placeholder="Игры · Тематические вечера · Частные события" value="${esc(ab.lead || '')}"></div>
-    <div class="field"><label>Участников</label><input class="inp" id="c-members" maxlength="20" placeholder="2500+" value="${esc(ab.members || '')}"><p class="hint">Пусто — цифра не показывается.</p></div>
-    <div class="field"><label>Соцсети и контакты</label>
-      ${[['tg', 'Чат в Telegram — ссылка или @ник'], ['ig', 'Instagram — ссылка или @ник'], ['wa', 'WhatsApp — номер или ссылка wa.me'], ['site', 'Сайт — https://…']]
-        .map(([k, ph]) => `<div class="inp-ic">${SOC_ICON[k]}<input class="inp" id="c-${k}" placeholder="${ph}" value="${esc(ab[k] || '')}"></div>`).join('')}
-      <p class="hint">Пустые поля не показываются в приложении.</p></div>
-    ${id !== 'new' ? '<button class="btn ghost danger" id="c-del">Удалить город</button>' : ''}`;
-  },
-  bind: (id) => {
-    let status = id === 'new' ? 'active' : cityById(id)?.status;
-    $$('#c-status button').forEach((b) => b.addEventListener('click', () => { hapticSel(); status = b.dataset.v; $$('#c-status button').forEach((x) => x.classList.toggle('on', x === b)); }));
-    mainButton('Сохранить', async () => {
-      const name = $('#c-name').value.trim();
-      if (!name) { notify('error'); return toast('Введите название города'); }
-      const next = clone(CFG), tz = Number($('#c-tz').value);
-      const v = (k) => $('#c-' + k).value.trim();
-      const about = { lead: v('lead'), members: v('members'), tg: normUrl(v('tg'), 'tg'), ig: normUrl(v('ig'), 'ig'), wa: normUrl(v('wa'), 'wa'), site: normUrl(v('site'), 'site') };
-      for (const k of ['tg', 'ig', 'wa', 'site']) if (v(k) && !/^https:\/\/[^\s<>"']+$/i.test(about[k])) { notify('error'); $('#c-' + k).focus(); return toast('Проверьте ссылку'); }
-      const row = { id: id === 'new' ? newId('c') : id, name, status, sub: '', tz: Number.isFinite(tz) ? tz : 0, about };
-      if (id === 'new') next.cities.push(row); else next.cities[next.cities.findIndex((c) => c.id === id)] = row;
-      if (await saveCfg(next)) { toast('Сохранено'); back(); }
-    });
-    $('#c-del')?.addEventListener('click', async () => {
-      const n = CFG.events.filter((e) => e.city === id).length;
-      if (!(await confirmBox(`«${cityById(id).name}» исчезнет из списка городов${n ? `, вместе с ним удалятся мероприятия (${n})` : ''}.`, { title: 'Удалить город?' }))) return;
-      const next = clone(CFG); next.cities = next.cities.filter((c) => c.id !== id); next.events = next.events.filter((e) => e.city !== id);
-      if (await saveCfg(next)) { if (city === id) { city = ''; store.set(CITY_KEY, ''); } toast('Город удалён'); back(); }
-    });
   },
 };
 
