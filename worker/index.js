@@ -189,7 +189,8 @@ async function register(req, env, send) {
 
   // запись о заявке — для кнопки «Подтвердить» (хранится 60 дней)
   const rid = crypto.randomUUID().slice(0, 8), kind = method === 'manager' ? 'manager' : 'paid';
-  await env.CONFIG.put('reg:' + rid, JSON.stringify({ uid: user.id, uname: user.username || '', html: text, file: !!hasFile, kind, title: ev.title, when, place: ev.place }), { expirationTtl: 60 * 86400 });
+  const chatUrl = city?.about?.tg || '';
+  await env.CONFIG.put('reg:' + rid, JSON.stringify({ uid: user.id, uname: user.username || '', html: text, file: !!hasFile, kind, title: ev.title, when, place: ev.place, chat: chatUrl }), { expirationTtl: 60 * 86400 });
   const markup = { inline_keyboard: [[{ text: kind === 'manager' ? '✅ Обработано' : '✅ Подтвердить', callback_data: 'ok:' + rid, style: 'success' }], profileRow(user)] };
 
   const delivered = await deliver(env, user, text, hasFile ? file : null, markup);
@@ -204,7 +205,7 @@ async function register(req, env, send) {
   const ack = method === 'manager'
     ? `📨 Заявка отправлена. Менеджер свяжется с вами в ближайшее время.\n\n${h(ev.title)} — ${h(when)}`
     : `✅ <b>Вы записаны на игру!</b>\n\n🎭 ${h(ev.title)}\n📅 ${h(when)}\n📍 ${h(ev.place)}\n\nХорошего дня и до встречи!`;
-  await tgCall(env, 'sendMessage', { chat_id: user.id, text: ack, parse_mode: 'HTML' });
+  await tgCall(env, 'sendMessage', { chat_id: user.id, text: ack + (chatUrl ? '\n\n💬 Вступайте в наш чат — там анонсы игр и общение с игроками.' : ''), parse_mode: 'HTML', ...(chatUrl ? { reply_markup: { inline_keyboard: [[{ text: '💬 Вступить в чат', url: chatUrl }]] } } : {}) });
   return send(200, { ok: true, kind: method === 'manager' ? 'manager' : 'paid' });
 }
 
@@ -289,7 +290,7 @@ async function onCallback(env, q) {
   const body = { chat_id: q.message.chat.id, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: { inline_keyboard: [profileRow({ id: rec.uid, username: rec.uname })] } };
   await tgJson(env, rec.file ? 'editMessageCaption' : 'editMessageText', { ...body, ...(rec.file ? { caption: `${rec.html}\n\n${line}` } : { text: `${rec.html}\n\n${line}` }) });
   await answer(rec.kind === 'manager' ? 'Отмечено ✅' : 'Подтверждено ✅');
-  if (rec.kind !== 'manager') await tgCall(env, 'sendMessage', { chat_id: rec.uid, parse_mode: 'HTML', text: `✅ <b>Запись подтверждена</b>\n\n<blockquote>🎭 <b>${h(rec.title)}</b>\n📅 ${h(rec.when)}\n📍 ${h(rec.place)}</blockquote>\n\nЖдём вас! 🎭` });
+  if (rec.kind !== 'manager') await tgCall(env, 'sendMessage', { chat_id: rec.uid, parse_mode: 'HTML', text: `✅ <b>Запись подтверждена</b>\n\n<blockquote>🎭 <b>${h(rec.title)}</b>\n📅 ${h(rec.when)}\n📍 ${h(rec.place)}</blockquote>\n\nЖдём вас! 🎭` , ...(rec.chat ? { reply_markup: { inline_keyboard: [[{ text: '💬 Наш чат', url: rec.chat }]] } } : {}) });
 }
 async function onUpdate(env, u) {
   if (u.callback_query) return onCallback(env, u.callback_query);

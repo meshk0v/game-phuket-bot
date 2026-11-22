@@ -680,10 +680,16 @@ const PayDone = {
       <h1 class="d">${paid ? 'Вы записаны<br><span class="red">на игру</span>' : 'Заявка<br><span class="red">отправлена</span>'}</h1>
       <p class="lead">${paid ? 'Хорошего дня и до встречи!' : 'Менеджер свяжется с вами в ближайшее время.'}</p>
       ${e ? `<div class="ticket"><span class="cap">${esc(e.title)}</span><b class="d">${whenTxt(e)}</b><p>${esc(e.place)}${e.area ? ', ' + esc(e.area) : ''}</p><p>${(reg?.n || 1)} чел.</p></div>` : ''}
-      <button class="btn" data-go="afisha" style="margin-top:20px">В афишу</button>
+      ${e && aboutOf(e.city).tg ? `<div class="chat-cta"><b>Вступайте в наш чат</b><p>Анонсы игр, новости и общение с игроками.</p>
+        <button class="btn" data-chat>💬 Вступить в чат</button></div>` : ''}
+      <button class="btn ${e && aboutOf(e.city).tg ? 'ghost' : ''}" data-go="afisha" style="margin-top:10px">В афишу</button>
     </section>`;
   },
-  bind: () => { stack.length = 0; receipt = null; },
+  bind: (arg) => {
+    stack.length = 0; receipt = null;
+    const e = EVENTS.find((x) => x.id === arg.split('/')[0]);
+    $('[data-chat]')?.addEventListener('click', () => { haptic(); openTgLink(aboutOf(e.city).tg); });
+  },
 };
 
 const Games = {

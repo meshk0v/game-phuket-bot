@@ -354,3 +354,8 @@ html:not([data-mobile]) .toast{top:auto;bottom:calc(var(--bot) + 160px)}
 .about-game{margin-top:20px;border:1px solid var(--line2);border-left:3px solid var(--red);border-radius:14px;padding:12px 14px;background:var(--s1)}
 .about-game b{display:block;font-size:20px;margin:6px 0 2px}
 .about-game small{color:var(--mute);font-size:13px}
+
+.chat-cta{margin-top:18px;border:1px solid rgba(41,169,235,.45);border-radius:18px;padding:18px;background:linear-gradient(140deg,rgba(41,169,235,.16),transparent 70%);text-align:left}
+.chat-cta b{font:600 20px var(--display);text-transform:uppercase}
+.chat-cta p{color:#bdbdbd;font-size:14px;margin:6px 0 14px}
+.chat-cta .btn{background:#29A9EB}
