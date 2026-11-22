@@ -8,6 +8,7 @@ npx wrangler@3 login                       # откроется браузер, 
 npx wrangler@3 kv namespace create CONFIG  # вывести id и вписать его в wrangler.toml
 npx wrangler@3 secret put BOT_TOKEN        # вставить токен бота (вводится скрыто)
 npx wrangler@3 secret put ADMIN_IDS        # Telegram ID админов через запятую (узнать: /id у бота)
+npx wrangler@3 secret put CITY_MANAGERS    # менеджеры городов: phuket:ID,bali:ID (несколько ID через |) — заявки приходят им в личку
 npx wrangler@3 deploy                      # покажет адрес https://game-phuket-api.<имя>.workers.dev
 ```
 

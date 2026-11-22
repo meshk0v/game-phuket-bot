@@ -105,34 +105,54 @@ async function post(env, chat, thread, text, file, markup) {
   fd.append(isPdf ? 'document' : 'photo', file, OK_TYPES[file.type]);
   return tgJson(env, isPdf ? 'sendDocument' : 'sendPhoto', fd);
 }
-// На каждого участника — своя тема в чате менеджеров (id темы хранится в KV)
-async function sendToChat(env, user, text, file, markup) {
-  const chat = env.MANAGER_CHAT_ID;
-  if (!chat) return false;
-  const key = `topic:${chat}:${user.id}`;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    let thread = attempt === 0 ? Number(await env.CONFIG.get(key)) || null : null, fresh = false;
-    if (!thread) {
-      const t = await tgJson(env, 'createForumTopic', { chat_id: chat, name: (fullName(user) + (user.username ? ' @' + user.username : '')).slice(0, 128) });
-      if (t.ok) { thread = t.result.message_thread_id; await env.CONFIG.put(key, String(thread)); fresh = true; }
-      else if (!/not a forum/i.test(t.description || '')) return false; // нет прав на создание тем и т.п. — запасной путь
-      // иначе чат без тем: пишем в общий поток
-    }
-    if (fresh) await post(env, chat, thread, `🆕 <b>Новый участник</b>\n\n${who(user)}`, null, { inline_keyboard: [profileRow(user)] });
-    const r = await post(env, chat, thread, text, file, markup);
-    if (r.ok) return true;
-    if (thread && attempt === 0 && /thread not found|TOPIC_DELETED|topic.*(closed|deleted)/i.test(r.description || '')) { await env.CONFIG.delete(key); continue; } // тему удалили — создадим заново
-    return false;
-  }
-  return false;
+// Менеджеры по городам: секрет CITY_MANAGERS = "phuket:111,bali:222" (несколько id через |)
+function cityManagers(env, cityId) {
+  const out = {};
+  for (const m of String(env.CITY_MANAGERS || '').matchAll(/([A-Za-z0-9_-]+)\s*:\s*([\d|\s]+)/g)) out[m[1]] = m[2].split('|').map((s) => s.trim()).filter(Boolean);
+  return cityId === undefined ? out : out[cityId] || [];
 }
-// Основной путь — чат с темами; если не вышло — личные сообщения менеджерам
-async function deliver(env, user, text, file, markup) {
-  if (await sendToChat(env, user, text, file, markup)) return 1;
+const allManagerIds = (env) => [...new Set([...Object.values(cityManagers(env)).flat(), ...managers(env)])];
+// Заявка уходит в личку менеджерам города; если не дошла (менеджер не нажал /start в боте и т.п.) — админам
+async function deliver(env, cityId, text, file, markup, logBase) {
   let n = 0;
-  for (const id of managers(env)) if ((await post(env, id, null, text, file, markup)).ok) n++;
+  const errs = [];
+  for (const id of cityManagers(env, cityId)) {
+    const r = await post(env, id, null, text, file, markup);
+    if (r.ok) n++; else errs.push(`${id}: ${/initiate|blocked|chat not found|deactivated/i.test(r.description || '') ? 'менеджер не запустил бота или заблокировал его' : r.description || 'ошибка'}`);
+  }
+  if (n) return n;
+  await logAdd(env, { ...logBase, a: 'fail', x: errs.join('; ') || `нет менеджера для города ${cityId || '—'}` });
+  const warn = `⚠️ <i>Не доставлено менеджеру города${errs.length ? ' (он не запустил бота или заблокировал его)' : ''}</i>\n\n`;
+  for (const id of managers(env)) if ((await post(env, id, null, warn + text, file, markup)).ok) n++;
   return n;
 }
+
+/* ---------- Журнал: каждое событие — отдельный ключ KV, данные в metadata (новые — первыми) ---------- */
+async function logAdd(env, o) {
+  const t = Date.now(), meta = { t };
+  for (const [k, v] of Object.entries(o)) if (v !== undefined && v !== null && v !== '') meta[k] = typeof v === 'string' ? v.slice(0, k === 'x' ? 200 : 80) : v;
+  while (enc.encode(JSON.stringify(meta)).length > 1000 && meta.x) meta.x = meta.x.slice(0, Math.floor(meta.x.length / 2));
+  try { await env.CONFIG.put(`log:${String(9e12 - t).padStart(13, '0')}:${crypto.randomUUID().slice(0, 6)}`, '', { metadata: meta, expirationTtl: 400 * 86400 }); } catch { /* журнал не должен ломать запись */ }
+}
+async function logRead(env, { city, types, cursor, want = 50 }) {
+  const items = [];
+  let cur = cursor || undefined, pages = 0, done = false;
+  while (items.length < want && pages < 6) {
+    const r = await env.CONFIG.list({ prefix: 'log:', limit: 200, cursor: cur });
+    pages++;
+    for (const k of r.keys) {
+      const m = k.metadata; if (!m) continue;
+      if (city && m.c !== city) continue;
+      if (types && !types.includes(m.a)) continue;
+      items.push(m);
+    }
+    if (r.list_complete) { done = true; break; }
+    cur = r.cursor;
+  }
+  return { items, cursor: done ? null : cur };
+}
+const userLog = (u) => ({ u: u.id, n: fullName(u), un: u.username || '' });
+
 async function rateOk(env, user, kind, max) {
   const key = `rl:${kind}:${user.id}`, used = Number(await env.CONFIG.get(key)) || 0;
   return { ok: used < max, bump: () => env.CONFIG.put(key, String(used + 1), { expirationTtl: 3600 }) };
@@ -190,12 +210,14 @@ async function register(req, env, send) {
   // запись о заявке — для кнопки «Подтвердить» (хранится 60 дней)
   const rid = crypto.randomUUID().slice(0, 8), kind = method === 'manager' ? 'manager' : 'paid';
   const chatUrl = city?.about?.tg || '';
-  await env.CONFIG.put('reg:' + rid, JSON.stringify({ uid: user.id, uname: user.username || '', html: text, file: !!hasFile, kind, title: ev.title, when, place: ev.place, chat: chatUrl }), { expirationTtl: 60 * 86400 });
+  await env.CONFIG.put('reg:' + rid, JSON.stringify({ uid: user.id, uname: user.username || '', html: text, file: !!hasFile, kind, title: ev.title, when, place: ev.place, chat: chatUrl, city: ev.city, name: fullName(user), n }), { expirationTtl: 60 * 86400 });
   const markup = { inline_keyboard: [[{ text: kind === 'manager' ? '✅ Обработано' : '✅ Подтвердить', callback_data: 'ok:' + rid, style: 'success' }], profileRow(user)] };
 
-  const delivered = await deliver(env, user, text, hasFile ? file : null, markup);
+  const logBase = { ...userLog(user), c: ev.city, e: ev.title, d: when, p: n, m: METHOD_NAME[method], s: amount, k: kind, r: rid };
+  const delivered = await deliver(env, ev.city, text, hasFile ? file : null, markup, logBase);
   if (!delivered) return send(502, { error: 'Не удалось отправить заявку менеджеру. Попробуйте позже.' });
   await rate.bump();
+  await logAdd(env, { ...logBase, a: 'reg', x: comment });
   // мои записи — чтобы приложение показывало «Вы записаны» вместо кнопки
   const myKey = `my:${user.id}`, mine = ((await env.CONFIG.get(myKey, 'json')) || []).filter((x) => !(x.e === ev.id && x.d === date));
   mine.push({ e: ev.id, d: date, k: kind, r: rid });
@@ -222,10 +244,13 @@ async function request(req, env, send) {
   if (!contact) return send(400, { error: 'Укажите контакт' });
   let head, lines = [];
   // вопрос по конкретной игре: проверяем мероприятие по конфигу, дату — по формату
-  let about = '';
+  let about = '', evTitle = '';
+  const st = await readState(env);
+  let cityId = st.config.cities.some((c) => c.id === b.city) ? b.city : '';
   if (b.eventId) {
-    const st = await readState(env), ev = st.config.events.find((e) => e.id === b.eventId);
+    const ev = st.config.events.find((e) => e.id === b.eventId);
     if (ev) {
+      cityId = ev.city; evTitle = ev.title;
       const city = st.config.cities.find((c) => c.id === ev.city);
       let when = ev.time;
       if (/^\d{4}-\d{2}-\d{2}$/.test(b.date || '') && !Number.isNaN(Date.parse(b.date))) {
@@ -256,8 +281,12 @@ async function request(req, env, send) {
   if (!(user.username && norm(contact) === norm(user.username))) parts.push(`📞 <b>${h(contact)}</b>`);
   if (name && norm(name) !== norm(fullName(user))) parts.push(`✍️ ${h(name)}`);
   const text = [head, '', ...lines, '', ...(parts.length ? [parts.join(' · '), ''] : []), who(user)].join('\n');
-  if (!(await deliver(env, user, text, null, { inline_keyboard: [profileRow(user)] }))) return send(502, { error: 'Не удалось отправить. Попробуйте позже.' });
+  const cityName = st.config.cities.find((c) => c.id === cityId)?.name;
+  const logBase = { ...userLog(user), c: cityId, e: evTitle, x: [type === 'order' ? (b.formats || []).join(', ') : '', message, contact !== user.username && contact !== '@' + user.username ? contact : ''].filter(Boolean).join(' · ') };
+  const full = cityName ? text.replace('\n', ` · ${h(cityName)}\n`) : text;
+  if (!(await deliver(env, cityId, full, null, { inline_keyboard: [profileRow(user)] }, { ...logBase, k: type }))) return send(502, { error: 'Не удалось отправить. Попробуйте позже.' });
   await rate.bump();
+  await logAdd(env, { ...logBase, a: type });
   const ack = { ask: '📨 Вопрос получен. Ответим в ближайшее время.', coop: '📨 Предложение получено. Менеджер свяжется с вами.', order: '📨 Заявка на мероприятие получена. Менеджер свяжется с вами в ближайшее время.', custom: '📨 Заявка на ваше мероприятие получена. Менеджер свяжется с вами в ближайшее время.' }[type];
   await tgCall(env, 'sendMessage', { chat_id: user.id, text: ack });
   return send(200, { ok: true });
@@ -265,7 +294,7 @@ async function request(req, env, send) {
 
 /* ---------- Бот на вебхуке: /start, /id, кнопка «Подтвердить» ---------- */
 async function canConfirm(env, q) {
-  const ids = new Set([...managers(env), ...(env.ADMIN_IDS || '').split(',').map((s) => s.trim())]);
+  const ids = new Set([...allManagerIds(env), ...(env.ADMIN_IDS || '').split(',').map((s) => s.trim())]);
   if (ids.has(String(q.from.id))) return true;
   if (q.message?.chat?.type && q.message.chat.type !== 'private') {
     const m = await tgJson(env, 'getChatMember', { chat_id: q.message.chat.id, user_id: q.from.id });
@@ -290,6 +319,7 @@ async function onCallback(env, q) {
   const body = { chat_id: q.message.chat.id, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: { inline_keyboard: [profileRow({ id: rec.uid, username: rec.uname })] } };
   await tgJson(env, rec.file ? 'editMessageCaption' : 'editMessageText', { ...body, ...(rec.file ? { caption: `${rec.html}\n\n${line}` } : { text: `${rec.html}\n\n${line}` }) });
   await answer(rec.kind === 'manager' ? 'Отмечено ✅' : 'Подтверждено ✅');
+  await logAdd(env, { a: 'ok', u: rec.uid, n: rec.name, un: rec.uname, c: rec.city, e: rec.title, d: rec.when, p: rec.n, k: rec.kind, r: id, b: by, bu: q.from.id });
   if (rec.kind !== 'manager') await tgCall(env, 'sendMessage', { chat_id: rec.uid, parse_mode: 'HTML', text: `✅ <b>Запись подтверждена</b>\n\n<blockquote>🎭 <b>${h(rec.title)}</b>\n📅 ${h(rec.when)}\n📍 ${h(rec.place)}</blockquote>\n\nЖдём вас! 🎭` , ...(rec.chat ? { reply_markup: { inline_keyboard: [[{ text: '💬 Наш чат', url: rec.chat }]] } } : {}) });
 }
 async function onUpdate(env, u) {
@@ -297,9 +327,25 @@ async function onUpdate(env, u) {
   const m = u.message;
   if (!m?.text) return;
   if (/^\/start(@\w+)?(\s|$)/.test(m.text) && m.chat.type === 'private') {
+    if (!(await env.CONFIG.get('seen:' + m.from.id))) { await env.CONFIG.put('seen:' + m.from.id, '1'); await logAdd(env, { a: 'new', ...userLog(m.from) }); }
     return tgCall(env, 'sendMessage', { chat_id: m.chat.id, parse_mode: 'HTML',
       text: 'Приветствую! 🎭\n<b>Game Phuket</b> — мафия-клуб на Пхукете.\n\nАфиша, запись на игры, частные мероприятия и сотрудничество — всё в приложении 👇',
       reply_markup: { inline_keyboard: [[{ text: '🚀 Открыть Game Phuket', web_app: { url: env.WEBAPP_URL } }]] } });
+  }
+  if (/^\/log(@\w+)?(\s|$)/.test(m.text) && m.chat.type === 'private') {
+    const uid = String(m.from.id), isAdm = (env.ADMIN_IDS || '').split(',').map((s) => s.trim()).includes(uid);
+    const mine = Object.entries(cityManagers(env)).filter(([, ids]) => ids.includes(uid)).map(([c]) => c);
+    if (!isAdm && !mine.length) return;
+    const st = await readState(env), cityName = (id) => st.config.cities.find((c) => c.id === id)?.name || '';
+    const { items } = await logRead(env, { want: 15, types: ['reg', 'ok', 'ask', 'coop', 'order', 'custom', 'fail'] });
+    const list = items.filter((x) => isAdm || mine.includes(x.c)).slice(0, 15);
+    const lines = list.map((x) => {
+      const bk = new Date(x.t + 7 * 3600e3), at = `${pad2(bk.getUTCDate())}.${pad2(bk.getUTCMonth() + 1)} ${pad2(bk.getUTCHours())}:${pad2(bk.getUTCMinutes())}`;
+      const nm = x.un ? '@' + h(x.un) : `<a href="tg://user?id=${x.u}">${h(x.n || x.u)}</a>`;
+      const what = { reg: x.k === 'manager' ? '⚠️ запись без оплаты' : '🎟 запись', ok: '✅ подтверждено', ask: '❓ вопрос', coop: '🤝 сотрудничество', order: '🎉 заказ игр', custom: '✨ своё мероприятие', fail: '⛔ не доставлено' }[x.a] || x.a;
+      return `<b>${at}</b> ${what} · ${nm}${x.e ? ' · ' + h(x.e) : ''}${x.p ? ` · ${x.p} чел.` : ''}${x.b ? ' · ' + h(x.b) : ''}${isAdm && x.c ? ' · ' + h(cityName(x.c)) : ''}`;
+    });
+    return tgCall(env, 'sendMessage', { chat_id: m.chat.id, parse_mode: 'HTML', text: lines.length ? `📒 <b>Последние события</b>\n\n${lines.join('\n')}\n\nПолный журнал — в приложении, вкладка «Админ».` : '📒 Журнал пока пуст.' });
   }
   if (/^\/id(@\w+)?(\s|$)/.test(m.text)) {
     const text = m.chat.type === 'private' ? `Ваш Telegram ID: <code>${m.from.id}</code>` : `ID этого чата: <code>${m.chat.id}</code>${m.message_thread_id ? `\nТема: <code>${m.message_thread_id}</code>` : ''}`;
@@ -345,6 +391,11 @@ export default {
         if (!(await userOf(req, env))) return send(401, { error: 'Откройте приложение из Telegram' });
         const img = await env.CONFIG.get('qr_thai', 'arrayBuffer');
         return img ? new Response(img, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=300', ...cors } }) : send(404, { error: 'Нет QR' });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/admin/log') {
+        if (!(await isAdmin(req, env))) return send(403, { error: 'Нет доступа' });
+        const types = (url.searchParams.get('types') || '').split(',').filter((s) => /^[a-z]{2,8}$/.test(s));
+        return send(200, await logRead(env, { city: url.searchParams.get('city') || '', types: types.length ? types : null, cursor: url.searchParams.get('cursor') || '' }));
       }
       if (req.method === 'PUT' && url.pathname === '/api/admin/config') {
         if (!(await isAdmin(req, env))) return send(403, { error: 'Нет доступа' });

@@ -575,13 +575,13 @@ async function sendRegistration(e, n, method, comment = '') {
   go(`paydone/${e.id}/${r.j.kind}`);
 }
 
-// Заявки из форм (вопрос, сотрудничество, заказ игр) — в чат менеджеров, под участника создаётся своя тема
+// Заявки из форм (вопрос, сотрудничество, заказ игр) — в личку менеджеру выбранного города
 async function sendRequest(type, data, title, okMsg, after) {
   if (sending) return;
   if (!API_OK || !inTG) { notify('error'); return toast('Отправка работает только в Telegram'); }
   sending = true;
   tg?.MainButton.showProgress?.(); const fb = $('#fbtn'); if (fb) { fb.disabled = true; fb.textContent = 'Отправляем…'; }
-  const r = await getJSON(API + '/api/request', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() }, body: JSON.stringify({ type, ...data }) }, 12000);
+  const r = await getJSON(API + '/api/request', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() }, body: JSON.stringify({ type, city, ...data }) }, 12000);
   sending = false;
   tg?.MainButton.hideProgress?.(); if (fb) { fb.disabled = false; fb.textContent = fb.dataset.t || 'Отправить'; }
   if (!r.ok) { notify('error'); return toast(r.j?.error || 'Не удалось отправить. Проверьте интернет и повторите'); }
@@ -973,7 +973,58 @@ const Ask = formScreen('ask', 'Есть вопрос?', 'Напишите', 'н�
 const Coop = formScreen('coop', 'Для площадок и брендов', 'Давайте', 'дружить', 'Мы организуем и проводим развлекательные игры на острове и всегда открыты к взаимовыгодному сотрудничеству.', 'Как вы видите наше сотрудничество?', 'Менеджер свяжется с вами и договорится о встрече.');
 
 /* ---------------- админка (только для ADMIN_IDS) ---------------- */
-let admCity = '';
+let admCity = '', admView = 'afisha';
+
+/* журнал: кто записался, кто подтвердил, вопросы и заявки */
+const LOG_KIND = {
+  reg: ['🎟', 'Запись'], ok: ['✅', 'Подтверждение'], ask: ['❓', 'Вопрос'], coop: ['🤝', 'Сотрудничество'],
+  order: ['🎉', 'Заказ игр'], custom: ['✨', 'Своё мероприятие'], new: ['👋', 'Новый пользователь'], fail: ['⛔', 'Не доставлено менеджеру'],
+};
+const LOG_FILTERS = [['', 'Всё'], ['reg,ok', 'Записи'], ['ask,coop,order,custom', 'Заявки'], ['new', 'Новые'], ['fail', 'Ошибки']];
+const LOG = { city: '', types: '', items: [], cursor: null, loading: false, err: '' };
+const logTime = (x) => {
+  const d = new Date(x.t + (cityById(x.c)?.tz ?? 7) * 3600e3);
+  return `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)} · ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+};
+function logItem(x) {
+  const [ic, lbl] = x.a === 'reg' && x.k === 'manager' ? ['⚠️', 'Запись без оплаты'] : x.a === 'ok' && x.k === 'manager' ? ['✅', 'Обработано'] : LOG_KIND[x.a] || ['•', x.a];
+  const who = x.un ? '@' + x.un : x.n || x.u;
+  const det = [x.e, x.d, x.p ? x.p + ' чел.' : '', x.m, x.s].filter(Boolean).join(' · ');
+  return `<div class="lg lg-${esc(x.a)}">
+    <div class="lg-top"><span class="lg-k">${ic} ${esc(lbl)}</span><span class="lg-t">${logTime(x)}${!LOG.city && cityById(x.c) ? ' · ' + esc(cityById(x.c).name) : ''}</span></div>
+    ${x.u ? `<button class="lg-u" data-lu="${esc(x.un || '')}" data-uid="${esc(String(x.u))}">${esc(who)}${x.un && x.n ? ` <span>${esc(x.n)}</span>` : ''}</button>` : ''}
+    ${det ? `<div class="lg-d">${esc(det)}</div>` : ''}
+    ${x.b ? `<div class="lg-d">Подтвердил: <b>${esc(x.b)}</b></div>` : ''}
+    ${x.x ? `<div class="lg-x">${esc(x.x)}</div>` : ''}
+  </div>`;
+}
+function adminLogHtml() {
+  return `
+    <div class="chips-row"><button class="chip ${!LOG.city ? 'on' : ''}" data-lc="">Все города</button>${CFG.cities.map((c) => `<button class="chip ${c.id === LOG.city ? 'on' : ''}" data-lc="${esc(c.id)}">${esc(c.name)}</button>`).join('')}</div>
+    <div class="chips-row" style="margin-top:8px">${LOG_FILTERS.map(([v, t]) => `<button class="chip ${v === LOG.types ? 'on' : ''}" data-lt="${v}">${t}</button>`).join('')}</div>
+    <div id="log-list" style="margin-top:14px">${LOG.items.map(logItem).join('')}
+      ${LOG.loading ? '<p class="mute" style="padding:18px 2px">Загружаем…</p>' : LOG.err ? `<p class="mute" style="padding:18px 2px">${esc(LOG.err)}</p>` : !LOG.items.length ? '<p class="mute" style="padding:18px 2px">Событий пока нет.</p>' : ''}
+    </div>
+    ${LOG.cursor && !LOG.loading ? '<button class="btn ghost" id="log-more">Показать ещё</button>' : ''}`;
+}
+async function loadLog(more) {
+  if (LOG.loading) return;
+  if (!more) { LOG.items = []; LOG.cursor = null; }
+  LOG.loading = true; LOG.err = ''; route();
+  const q = new URLSearchParams({ city: LOG.city, types: LOG.types, ...(more && LOG.cursor ? { cursor: LOG.cursor } : {}) });
+  const r = await getJSON(API + '/api/admin/log?' + q, { headers: authHdr() }, 10000);
+  LOG.loading = false;
+  if (r.ok) { LOG.items.push(...(r.j.items || [])); LOG.cursor = r.j.cursor || null; LOG.loaded = true; }
+  else LOG.err = r.status === 403 ? 'Нет доступа' : 'Не удалось загрузить журнал';
+  if (admView === 'log' && cur === 'admin') { const y = window.scrollY; route(); window.scrollTo(0, y); }
+}
+function bindLog() {
+  $$('[data-lc]').forEach((b) => b.addEventListener('click', () => { hapticSel(); LOG.city = b.dataset.lc; loadLog(); }));
+  $$('[data-lt]').forEach((b) => b.addEventListener('click', () => { hapticSel(); LOG.types = b.dataset.lt; loadLog(); }));
+  $('#log-more')?.addEventListener('click', () => { haptic(); loadLog(true); });
+  $$('[data-uid]').forEach((b) => b.addEventListener('click', () => { haptic(); openTgLink(b.dataset.lu ? 'https://t.me/' + b.dataset.lu : 'tg://user?id=' + b.dataset.uid); }));
+  if (!LOG.loaded && !LOG.loading && !LOG.err) loadLog();
+}
 const confirmBox = (text, { title = 'Вы уверены?', ok = 'Удалить' } = {}) =>
   modal({ icon: '!', title, text, buttons: [{ text: 'Отмена', kind: 'ghost', value: false }, { text: ok, value: true }], dismiss: false }).then((v) => v === true);
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -998,6 +1049,8 @@ const Admin = {
       .sort((a, b) => (a.repeat === b.repeat ? (a.repeat === 'once' ? a.date.localeCompare(b.date) : ((a.dow + 6) % 7) - ((b.dow + 6) % 7)) : a.repeat === 'once' ? 1 : -1) || a.time.localeCompare(b.time));
     return `
     ${header('<span class="pill"><i></i>Админка</span>')}
+    <div class="seg" id="adm-view" style="margin-bottom:18px"><button data-v="afisha" class="${admView === 'afisha' ? 'on' : ''}">Афиша</button><button data-v="log" class="${admView === 'log' ? 'on' : ''}">Журнал</button></div>
+    ${admView === 'log' ? adminLogHtml() : `
     <p class="cap">Управление</p>
     <h1 class="d big" style="margin-top:8px">Афиша</h1>
     ${CFG.cities.length ? `
@@ -1008,9 +1061,11 @@ const Admin = {
           <div class="meta">${esc(e.place)} · ${priceTxt(e.price)}${e.active === false ? ' · <b>скрыто</b>' : ''}</div><span class="go">›</span>
         </button>`).join('') : '<p class="mute" style="padding:18px 2px">В этом городе пока нет мероприятий.</p>'}</div>
       <button class="btn" data-go="adminevent/new">+ Добавить мероприятие</button>` : '<p class="mute" style="padding:18px 2px">Городов пока нет.</p>'}
-    <p class="cap" style="margin-top:22px;line-height:1.6">${API_OK ? 'Изменения сразу видны всем пользователям.' : 'Нет связи с сервером — сохранить изменения нельзя.'}</p>`;
+    <p class="cap" style="margin-top:22px;line-height:1.6">${API_OK ? 'Изменения сразу видны всем пользователям.' : 'Нет связи с сервером — сохранить изменения нельзя.'}</p>`}`;
   },
   bind: () => {
+    $$('#adm-view button').forEach((b) => b.addEventListener('click', () => { hapticSel(); admView = b.dataset.v; route(); }));
+    if (admView === 'log') return bindLog();
     $$('[data-ac]').forEach((b) => b.addEventListener('click', () => { hapticSel(); admCity = b.dataset.ac; route(); }));
   },
 };

@@ -364,3 +364,15 @@ html:not([data-mobile]) .toast{top:auto;bottom:calc(var(--bot) + 160px)}
 .chat-cta .btn svg{width:22px;height:22px;flex:none}
 .chat-cta .btn svg circle{fill:#fff}
 .chat-cta .btn svg path{fill:#29A9EB}
+
+/* журнал в админке */
+.lg{border:1px solid var(--line,#222);border-radius:14px;padding:12px 14px;margin-bottom:8px;background:#0b0b0b}
+.lg-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.lg-k{font:600 14px var(--display);text-transform:uppercase;letter-spacing:.02em}
+.lg-t{color:#8a8a8a;font-size:12px;white-space:nowrap}
+.lg-u{display:block;background:none;border:0;padding:0;margin-top:6px;color:#fff;font:500 14px Inter,sans-serif;text-align:left;cursor:pointer}
+.lg-u span{color:#8a8a8a;font-weight:400}
+.lg-d{color:#bdbdbd;font-size:13px;margin-top:4px;line-height:1.4}
+.lg-x{color:#9a9a9a;font-size:13px;margin-top:6px;padding-left:10px;border-left:2px solid #333;white-space:pre-wrap;word-break:break-word}
+.lg-ok{border-color:rgba(60,190,110,.4)}
+.lg-fail{border-color:rgba(230,40,40,.55)}
