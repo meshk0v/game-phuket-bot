@@ -362,3 +362,5 @@ html:not([data-mobile]) .toast{top:auto;bottom:calc(var(--bot) + 160px)}
 
 .chat-cta b{display:block;margin-bottom:14px}
 .chat-cta .btn svg{width:22px;height:22px;flex:none}
+.chat-cta .btn svg circle{fill:#fff}
+.chat-cta .btn svg path{fill:#29A9EB}
