@@ -680,8 +680,8 @@ const PayDone = {
       <h1 class="d">${paid ? 'Вы записаны<br><span class="red">на игру</span>' : 'Заявка<br><span class="red">отправлена</span>'}</h1>
       <p class="lead">${paid ? 'Хорошего дня и до встречи!' : 'Менеджер свяжется с вами в ближайшее время.'}</p>
       ${e ? `<div class="ticket"><span class="cap">${esc(e.title)}</span><b class="d">${whenTxt(e)}</b><p>${esc(e.place)}${e.area ? ', ' + esc(e.area) : ''}</p><p>${(reg?.n || 1)} чел.</p></div>` : ''}
-      ${e && aboutOf(e.city).tg ? `<div class="chat-cta"><b>Вступайте в наш чат</b><p>Анонсы игр, новости и общение с игроками.</p>
-        <button class="btn" data-chat>💬 Вступить в чат</button></div>` : ''}
+      ${e && aboutOf(e.city).tg ? `<div class="chat-cta"><b>Вступайте в наш чат</b>
+        <button class="btn" data-chat>${SOC_ICON.tg}Вступить в чат</button></div>` : ''}
       <button class="btn ${e && aboutOf(e.city).tg ? 'ghost' : ''}" data-go="afisha" style="margin-top:10px">В афишу</button>
     </section>`;
   },
