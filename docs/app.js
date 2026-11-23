@@ -285,6 +285,12 @@ function done(title, msg, after) {
   modal({ icon: '✓', title, text: msg, buttons: [{ text: 'Хорошо', value: 'ok' }], dismiss: 'ok' }).then((v) => { if (v !== '__nav') fin(); });
 }
 
+let seenCity = '';
+function reportCity() {
+  if (!inTG || !API_OK || !cityById(city) || seenCity === city) return;
+  seenCity = city;
+  getJSON(API + '/api/seen', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() }, body: JSON.stringify({ city }) });
+}
 function resetCity() { haptic(); city = ''; store.set(CITY_KEY, ''); go('city'); }
 
 /* ---------------- роутер ---------------- */
@@ -315,6 +321,7 @@ function route() {
   sheetClose?.(true);
   mainButton(null);
   EVENTS = buildEvents();
+  reportCity();
   $('#tab-admin').style.display = IS_ADMIN ? '' : 'none';
   const isTab = TABS.includes(r);
   document.body.classList.toggle('notabs', !isTab);
@@ -978,16 +985,16 @@ let admCity = '', admView = 'afisha';
 /* журнал: кто записался, кто подтвердил, вопросы и заявки */
 const LOG_KIND = {
   reg: ['🎟', 'Запись'], ok: ['✅', 'Подтверждение'], ask: ['❓', 'Вопрос'], coop: ['🤝', 'Сотрудничество'],
-  order: ['🎉', 'Заказ игр'], custom: ['✨', 'Своё мероприятие'], new: ['👋', 'Новый пользователь'], fail: ['⛔', 'Не доставлено менеджеру'],
+  order: ['🎉', 'Заказ игр'], custom: ['✨', 'Своё мероприятие'], new: ['👋', 'Новый пользователь'], city: ['📍', 'Выбрал город'], fail: ['⛔', 'Не доставлено менеджеру'],
 };
-const LOG_FILTERS = [['', 'Всё'], ['reg,ok', 'Записи'], ['ask,coop,order,custom', 'Заявки'], ['new', 'Новые'], ['fail', 'Ошибки']];
+const LOG_FILTERS = [['', 'Всё'], ['reg,ok', 'Записи'], ['ask,coop,order,custom', 'Заявки'], ['new,city', 'Новые'], ['fail', 'Ошибки']];
 const LOG = { city: '', types: '', items: [], cursor: null, loading: false, err: '' };
 const logTime = (x) => {
   const d = new Date(x.t + (cityById(x.c)?.tz ?? 7) * 3600e3);
   return `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)} · ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 };
 function logItem(x) {
-  const [ic, lbl] = x.a === 'reg' && x.k === 'manager' ? ['⚠️', 'Запись без оплаты'] : x.a === 'ok' && x.k === 'manager' ? ['✅', 'Обработано'] : LOG_KIND[x.a] || ['•', x.a];
+  const [ic, lbl] = x.a === 'new' && !x.c ? ['👋', 'Запустил бота · город не выбран'] : x.a === 'reg' && x.k === 'manager' ? ['⚠️', 'Запись без оплаты'] : x.a === 'ok' && x.k === 'manager' ? ['✅', 'Обработано'] : LOG_KIND[x.a] || ['•', x.a];
   const who = x.un ? '@' + x.un : x.n || x.u;
   const det = [x.e, x.d, x.p ? x.p + ' чел.' : '', x.m, x.s].filter(Boolean).join(' · ');
   return `<div class="lg lg-${esc(x.a)}">

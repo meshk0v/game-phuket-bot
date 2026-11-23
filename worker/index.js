@@ -392,6 +392,21 @@ export default {
         const img = await env.CONFIG.get('qr_thai', 'arrayBuffer');
         return img ? new Response(img, { headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=300', ...cors } }) : send(404, { error: 'Нет QR' });
       }
+      if (req.method === 'POST' && url.pathname === '/api/seen') {
+        const u = await userOf(req, env);
+        if (!u) return send(401, { error: 'Откройте приложение из Telegram' });
+        const b = await req.json().catch(() => ({}));
+        const st = await readState(env);
+        if (!st.config.cities.some((c) => c.id === b.city)) return send(400, { error: 'Неверный город' });
+        const key = 'seen:' + u.id, prev = await env.CONFIG.get(key);
+        if (prev !== b.city) {
+          await env.CONFIG.put(key, b.city);
+          const was = prev && prev !== '1' ? st.config.cities.find((c) => c.id === prev)?.name : '';
+          // впервые в приложении — «Новый пользователь» с городом; после /start или смены города — «Выбрал город»
+          await logAdd(env, { a: prev ? 'city' : 'new', ...userLog(u), c: b.city, x: was ? 'был: ' + was : '' });
+        }
+        return send(200, { ok: true });
+      }
       if (req.method === 'GET' && url.pathname === '/api/admin/log') {
         if (!(await isAdmin(req, env))) return send(403, { error: 'Нет доступа' });
         const types = (url.searchParams.get('types') || '').split(',').filter((s) => /^[a-z]{2,8}$/.test(s));
