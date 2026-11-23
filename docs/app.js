@@ -1002,28 +1002,46 @@ function adminLogHtml() {
   return `
     <div class="chips-row"><button class="chip ${!LOG.city ? 'on' : ''}" data-lc="">Все города</button>${CFG.cities.map((c) => `<button class="chip ${c.id === LOG.city ? 'on' : ''}" data-lc="${esc(c.id)}">${esc(c.name)}</button>`).join('')}</div>
     <div class="chips-row" style="margin-top:8px">${LOG_FILTERS.map(([v, t]) => `<button class="chip ${v === LOG.types ? 'on' : ''}" data-lt="${v}">${t}</button>`).join('')}</div>
-    <div id="log-list" style="margin-top:14px">${LOG.items.map(logItem).join('')}
-      ${LOG.loading ? '<p class="mute" style="padding:18px 2px">Загружаем…</p>' : LOG.err ? `<p class="mute" style="padding:18px 2px">${esc(LOG.err)}</p>` : !LOG.items.length ? '<p class="mute" style="padding:18px 2px">Событий пока нет.</p>' : ''}
-    </div>
-    ${LOG.cursor && !LOG.loading ? '<button class="btn ghost" id="log-more">Показать ещё</button>' : ''}`;
+    <div id="log-wrap" style="margin-top:14px">${logBody()}</div>`;
 }
+const logMsg = (t) => `<p class="mute" style="padding:18px 2px">${t}</p>`;
+function logBody() {
+  return LOG.items.map(logItem).join('')
+    + (LOG.loading ? (LOG.items.length ? '' : logMsg('Загружаем…')) : LOG.err ? logMsg(esc(LOG.err)) : !LOG.items.length ? logMsg('Событий пока нет.') : '')
+    + (LOG.cursor ? `<button class="btn ghost" id="log-more" ${LOG.loading ? 'disabled' : ''}>${LOG.loading ? 'Загружаем…' : 'Показать ещё'}</button>` : '');
+}
+// Обновляем только список — без перерисовки всей страницы
+function paintLog() {
+  const w = $('#log-wrap');
+  if (!w) return;
+  w.innerHTML = logBody();
+  $('#log-more')?.addEventListener('click', () => { haptic(); loadLog(true); });
+  $$('[data-uid]', w).forEach((b) => b.addEventListener('click', () => { haptic(); openTgLink(b.dataset.lu ? 'https://t.me/' + b.dataset.lu : 'tg://user?id=' + b.dataset.uid); }));
+}
+let logSeq = 0;
 async function loadLog(more) {
-  if (LOG.loading) return;
+  if (more && LOG.loading) return;
+  const seq = ++logSeq; // ответ на старый фильтр игнорируем
   if (!more) { LOG.items = []; LOG.cursor = null; }
-  LOG.loading = true; LOG.err = ''; route();
+  LOG.loading = true; LOG.err = ''; paintLog();
   const q = new URLSearchParams({ city: LOG.city, types: LOG.types, ...(more && LOG.cursor ? { cursor: LOG.cursor } : {}) });
   const r = await getJSON(API + '/api/admin/log?' + q, { headers: authHdr() }, 10000);
+  if (seq !== logSeq) return;
   LOG.loading = false;
   if (r.ok) { LOG.items.push(...(r.j.items || [])); LOG.cursor = r.j.cursor || null; LOG.loaded = true; }
   else LOG.err = r.status === 403 ? 'Нет доступа' : 'Не удалось загрузить журнал';
-  if (admView === 'log' && cur === 'admin') { const y = window.scrollY; route(); window.scrollTo(0, y); }
+  paintLog();
 }
 function bindLog() {
-  $$('[data-lc]').forEach((b) => b.addEventListener('click', () => { hapticSel(); LOG.city = b.dataset.lc; loadLog(); }));
-  $$('[data-lt]').forEach((b) => b.addEventListener('click', () => { hapticSel(); LOG.types = b.dataset.lt; loadLog(); }));
-  $('#log-more')?.addEventListener('click', () => { haptic(); loadLog(true); });
-  $$('[data-uid]').forEach((b) => b.addEventListener('click', () => { haptic(); openTgLink(b.dataset.lu ? 'https://t.me/' + b.dataset.lu : 'tg://user?id=' + b.dataset.uid); }));
-  if (!LOG.loaded && !LOG.loading && !LOG.err) loadLog();
+  const pick = (attr, key) => $$(`[${attr}]`).forEach((b) => b.addEventListener('click', () => {
+    if (LOG[key] === b.getAttribute(attr) && !LOG.err) return;
+    hapticSel(); LOG[key] = b.getAttribute(attr);
+    $$(`[${attr}]`).forEach((x) => x.classList.toggle('on', x === b));
+    loadLog();
+  }));
+  pick('data-lc', 'city'); pick('data-lt', 'types');
+  paintLog();
+  if (!LOG.loaded && !LOG.loading) loadLog();
 }
 const confirmBox = (text, { title = 'Вы уверены?', ok = 'Удалить' } = {}) =>
   modal({ icon: '!', title, text, buttons: [{ text: 'Отмена', kind: 'ghost', value: false }, { text: ok, value: true }], dismiss: false }).then((v) => v === true);
