@@ -24,8 +24,8 @@
       "about": {
         "lead": "Игры · Тематические вечера · Частные события",
         "members": "2500+",
-        "tg": "https://t.me/MafiaPhuket",
-        "ig": "https://www.instagram.com/game.phuket",
+        "tg": "https://t.me/gpmafiabali",
+        "ig": "https://www.instagram.com/gameplace.bali",
         "wa": "",
         "site": ""
       }
@@ -103,14 +103,15 @@
       "dow": 3,
       "time": "19:00",
       "type": "Мафия",
-      "title": "Мафия в Вичите",
-      "place": "Beerfest Brewery",
-      "area": "Вичит",
+      "title": "Мафия в Чангу",
+      "place": "HPlace Restaurant & Lounge",
+      "area": "Чангу",
       "price": null,
       "dur": "до 5 часов, но можно сыграть любое комфортное количество игр",
       "blue": false,
       "active": true,
-      "desc": "Мафия — это место, где мы кричим, смеёмся и избавляемся от стресса. Вечер заряжен на эмоции — осталось занять место за столом."
+      "desc": "Мафия — это место, где мы кричим, смеёмся и избавляемся от стресса. Вечер заряжен на эмоции — осталось занять место за столом.",
+      "map": "https://maps.app.goo.gl/dL3RWkg5MyGfR1cu7"
     },
     {
       "id": "fri-bali",
@@ -119,14 +120,15 @@
       "dow": 5,
       "time": "19:00",
       "type": "Мафия",
-      "title": "Мафия на Банг-Тао",
-      "place": "Shishka UMAY",
-      "area": "Банг-Тао",
+      "title": "Мафия в Чангу",
+      "place": "HPlace Restaurant & Lounge",
+      "area": "Чангу",
       "price": null,
       "dur": "до 5 часов, но можно сыграть любое комфортное количество игр",
       "blue": false,
       "active": true,
-      "desc": "Мафия по пятницам заряжает лучше, чем поход на Бангла-роуд."
+      "desc": "Мафия по пятницам — лучший способ начать выходные.",
+      "map": "https://maps.app.goo.gl/dL3RWkg5MyGfR1cu7"
     },
     {
       "id": "sat-bali",
@@ -135,14 +137,15 @@
       "dow": 6,
       "time": "19:00",
       "type": "Мафия",
-      "title": "Мафия на Раваи",
-      "place": "Boss Level",
-      "area": "Раваи",
+      "title": "Мафия в Чангу",
+      "place": "HPlace Restaurant & Lounge",
+      "area": "Чангу",
       "price": null,
       "dur": "до 5 часов, но можно сыграть любое комфортное количество игр",
       "blue": false,
       "active": true,
-      "desc": "Та самая равайская Мафия — с криками и смехом."
+      "desc": "Та самая Мафия — с криками и смехом.",
+      "map": "https://maps.app.goo.gl/dL3RWkg5MyGfR1cu7"
     },
     {
       "id": "sun-bali",
@@ -151,14 +154,15 @@
       "dow": 0,
       "time": "19:00",
       "type": "Мафия",
-      "title": "Мафия на Банг-Тао",
-      "place": "LAVA Restobar",
-      "area": "Банг-Тао",
+      "title": "Мафия в Чангу",
+      "place": "HPlace Restaurant & Lounge",
+      "area": "Чангу",
       "price": null,
       "dur": "до 5 часов, но можно сыграть любое комфортное количество игр",
       "blue": false,
       "active": true,
-      "desc": "На этой Мафии собираются самые важные люди острова."
+      "desc": "На этой Мафии собираются самые важные люди острова.",
+      "map": "https://maps.app.goo.gl/dL3RWkg5MyGfR1cu7"
     }
   ]
 }

@@ -506,7 +506,7 @@ const EventPage = {
       <p class="lead">${esc(e.desc)}</p>
     </section>
     <div class="facts">
-      <div class="fact wide"><span>Где</span><b>${esc(e.place)}</b><div class="mute" style="font-size:13px;margin-top:2px">${esc(e.area)}</div></div>
+      <div class="fact wide"><span>Где</span><b>${esc(e.place)}</b><div class="mute" style="font-size:13px;margin-top:2px">${esc(e.area)}</div>${e.map ? '<button class="maplink" data-map>Открыть на карте ›</button>' : ''}</div>
       ${gpOf(e) ? `<div class="fact wide"><span>Стоимость</span><b>Мужчины — ${num(gpOf(e).m)} ${gpOf(e).cur}<br>Девушки — ${num(gpOf(e).f)} ${gpOf(e).cur}</b></div>` : `<div class="fact"><span>Стоимость</span><b>${priceTxt(e.price)}</b></div>`}
       ${e.dur ? (() => { const [main, ...rest] = e.dur.split(' · '), note = rest.join(' · '); const long = !note && main.length > 18; return `<div class="fact ${note || long ? 'wide' : ''}"><span>Длительность</span><b class="${long ? 'long' : ''}">${esc(main)}</b>${note ? `<small class="fnote">${esc(note)}</small>` : ''}</div>`; })() : ''}
     </div>
@@ -517,6 +517,7 @@ const EventPage = {
   },
   bind: (id) => {
     const e = EVENTS.find((x) => x.id === id) || EVENTS[0];
+    $('[data-map]')?.addEventListener('click', () => { haptic(); openLink(e.map); });
     if (!e || myReg(e)) return; // уже записан — кнопки «Записаться» нет
     const r = newReg(e);
     const label = () => `Записаться${r.n > 1 ? ` · ${r.n} чел.` : ''}`;
@@ -1150,7 +1151,8 @@ const AdminEvent = {
     <div class="field"><label>Название</label><input class="inp" id="e-title" maxlength="80" placeholder="Мафия на Раваи" value="${esc(e.title)}">
       <input class="inp" id="e-type" maxlength="40" placeholder="Формат: Мафия, Бункер, Квиз…" value="${esc(e.type)}"></div>
     <div class="field"><label>Место</label><input class="inp" id="e-place" maxlength="100" placeholder="Название заведения" value="${esc(e.place)}">
-      <input class="inp" id="e-area" maxlength="80" placeholder="Район / город" value="${esc(e.area)}"></div>
+      <input class="inp" id="e-area" maxlength="80" placeholder="Район / город" value="${esc(e.area)}">
+      <input class="inp" id="e-map" maxlength="300" placeholder="Ссылка на карту (https://…)" value="${esc(e.map || '')}"></div>
     <div class="field"><label>Стоимость, ฿</label><input class="inp" id="e-price" type="number" min="0" step="1" inputmode="numeric" placeholder="Пусто — «Уточняйте», 0 — «Бесплатно»" value="${e.price ?? ''}">
       <input class="inp" id="e-dur" maxlength="120" placeholder="Длительность: до 5 часов" value="${esc(e.dur)}"></div>
     <div class="field"><label>Описание</label><textarea class="inp" id="e-desc" maxlength="1000" placeholder="Пара предложений о мероприятии">${esc(e.desc)}</textarea></div>
@@ -1170,7 +1172,7 @@ const AdminEvent = {
       if (!v('title')) { notify('error'); return toast('Введите название'); }
       if (!v('time')) { notify('error'); return toast('Укажите время'); }
       if (repeat === 'once' && !v('date')) { notify('error'); return toast('Укажите дату'); }
-      const row = { id: id === 'new' ? newId('e') : id, city: v('city'), repeat, time: v('time'), type: v('type'), title: v('title'), place: v('place'), area: v('area'),
+      const row = { id: id === 'new' ? newId('e') : id, city: v('city'), repeat, time: v('time'), type: v('type'), title: v('title'), place: v('place'), area: v('area'), map: v('map'),
         price: v('price') === '' ? null : Math.max(0, Math.round(Number(v('price')))), dur: v('dur'), desc: v('desc'), blue: $('#e-blue').checked, active: $('#e-active').checked };
       if (repeat === 'once') row.date = v('date'); else row.dow = Number(v('dow'));
       const next = clone(CFG);
