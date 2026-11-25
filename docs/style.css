@@ -60,7 +60,7 @@ body.notabs #app{padding-bottom:calc(var(--bot) + 110px)}
 .feature .mask{position:absolute;right:-34px;top:-14px;width:160px;opacity:.6}
 .feature .tag{position:relative;display:block;margin-bottom:12px;max-width:75%}
 .feature h2{font-size:40px;max-width:75%}
-.feature .where{color:#cfcfcf;margin-top:8px;font-size:14px}
+.feature .where{position:relative;max-width:75%;color:#cfcfcf;margin-top:8px;font-size:14px}
 .count{display:flex;gap:8px;margin-top:16px}
 .count div{flex:1;background:rgba(0,0,0,.55);border:1px solid var(--line2);border-radius:12px;padding:8px 0;text-align:center}
 .count b{display:block;font:600 24px/1 var(--display)}.count span{font-size:10px;color:var(--mute);letter-spacing:.1em;text-transform:uppercase}
