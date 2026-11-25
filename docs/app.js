@@ -483,7 +483,7 @@ function bindFeature() {
     const e = EVENTS.find((x) => x.id === ev.currentTarget.dataset.book); if (!e) return;
     reg = newReg(e);
     if (e.price === 0) return sendRegistration(e, 1, 'free');
-    go(gpOf(e) ? `event/${e.id}` : `pay/${e.id}`);
+    go(`event/${e.id}`);
   });
   const c = $('.count'), ts = +c.dataset.ts;
   const upd = () => {
@@ -653,22 +653,21 @@ const Pay = {
         usdt && ['usdt', '₮', 'Криптовалюта', `${usdt} · ${esc(pay.usdt.network || 'TRC-20')}`],
         ['manager', '💬', 'Нет такого способа', 'Связаться с менеджером'],
       ].filter(Boolean);
-      box.innerHTML = `${stepperHtml(e, reg)}
-        ${gpOf(e) ? `<div class="total"><span class="mute">Итого</span><b>${localTotal(e, reg)}</b></div>` : ''}
+      if (reg.n < 1) { box.innerHTML = `<p class="mute" style="padding:30px 0">Сначала укажите, сколько вас.</p><button class="btn" id="toev">К игре</button>`; $("#toev").onclick = () => go(`event/${id}`); return; }
+      box.innerHTML = `
         <div class="sec" style="margin-top:22px"><h3 class="d">Способ оплаты</h3></div>
         ${gpOf(e) ? '<p class="hint" style="margin:-6px 0 12px">Оплата в местной валюте скоро появится. Пока можно оплатить в рублях или криптовалютой.</p>' : ''}
-        ${reg.n < 1 ? '<p class="mute" style="padding:8px 0">Укажите, сколько мужчин и девушек, — появятся суммы к оплате.</p>' : `<div class="pms">${m.map(([k, ic, t, s]) => `<button class="pm ${k === 'manager' ? 'alt' : ''}" data-pm="${k}"><span class="ic">${ic}</span><div><b>${t}</b><small>${s}</small></div><span class="go">›</span></button>`).join('')}</div>`}
+        <div class="pms">${m.map(([k, ic, t, s]) => `<button class="pm ${k === 'manager' ? 'alt' : ''}" data-pm="${k}"><span class="ic">${ic}</span><div><b>${t}</b><small>${s}</small></div><span class="go">›</span></button>`).join('')}</div>
         ${pay ? '' : '<p class="hint" style="margin-top:12px">Реквизиты недоступны. Откройте приложение из Telegram.</p>'}`;
       $$('[data-pm]').forEach((b) => b.addEventListener('click', () => {
         if (reg.n < 1) { notify('warning'); return toast('Укажите, сколько мужчин и девушек'); }
         haptic(); go(`pay/${id}/${b.dataset.pm}`);
       }));
-      bindStepper(reg, () => route()); // перерисуем суммы
       return;
     }
 
     // шаг 2 — реквизиты и чек
-    if (reg.n < 1) { box.innerHTML = `<p class="mute" style="padding:30px 0">Сначала укажите, сколько вас.</p><button class="btn" data-go="pay/${esc(id)}">Назад</button>`; return; }
+    if (reg.n < 1) { box.innerHTML = `<p class="mute" style="padding:30px 0">Сначала укажите, сколько вас.</p><button class="btn" id="toev">К игре</button>`; $("#toev").onclick = () => go(`event/${id}`); return; }
     if (method === 'manager') {
       box.innerHTML = `<div class="sec" style="margin-top:22px"><h3 class="d">Связаться с менеджером</h3></div>
         <p class="lead" style="font-size:14px">Заявка уйдёт менеджеру с пометкой «нет возможности оплатить». Он свяжется с вами и подскажет, как оплатить.</p>
