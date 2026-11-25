@@ -169,7 +169,7 @@ const STRIKES = [
   ['Удаление', 'Четвёртый страйк — удаление из игры.'],
 ];
 
-const roleIcon = (r, cls = '') => `<img class="rimg ${cls}" src="img/roles/${r.id}.webp" alt="${r.n}" loading="lazy">`;
+const roleIcon = (r, cls = '') => `<img class="rimg ${cls}" src="img/roles/${r.id}.webp?v=2" alt="${r.n}" loading="lazy">`;
 const FORMATS = [
   { n: 'Мафия', s: 'Классическая, тематическая, квиз-мафия' },
   { n: 'Бункер', s: 'Классический или на английском' },
