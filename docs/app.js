@@ -483,7 +483,7 @@ function bindFeature() {
     const e = EVENTS.find((x) => x.id === ev.currentTarget.dataset.book); if (!e) return;
     reg = newReg(e);
     if (e.price === 0) return sendRegistration(e, 1, 'free');
-    go(`pay/${e.id}`);
+    go(gpOf(e) ? `event/${e.id}` : `pay/${e.id}`);
   });
   const c = $('.count'), ts = +c.dataset.ts;
   const upd = () => {
@@ -657,7 +657,7 @@ const Pay = {
         ${gpOf(e) ? `<div class="total"><span class="mute">Итого</span><b>${localTotal(e, reg)}</b></div>` : ''}
         <div class="sec" style="margin-top:22px"><h3 class="d">Способ оплаты</h3></div>
         ${gpOf(e) ? '<p class="hint" style="margin:-6px 0 12px">Оплата в местной валюте скоро появится. Пока можно оплатить в рублях или криптовалютой.</p>' : ''}
-        <div class="pms">${m.map(([k, ic, t, s]) => `<button class="pm ${k === 'manager' ? 'alt' : ''}" data-pm="${k}"><span class="ic">${ic}</span><div><b>${t}</b><small>${s}</small></div><span class="go">›</span></button>`).join('')}</div>
+        ${reg.n < 1 ? '<p class="mute" style="padding:8px 0">Укажите, сколько мужчин и девушек, — появятся суммы к оплате.</p>' : `<div class="pms">${m.map(([k, ic, t, s]) => `<button class="pm ${k === 'manager' ? 'alt' : ''}" data-pm="${k}"><span class="ic">${ic}</span><div><b>${t}</b><small>${s}</small></div><span class="go">›</span></button>`).join('')}</div>`}
         ${pay ? '' : '<p class="hint" style="margin-top:12px">Реквизиты недоступны. Откройте приложение из Telegram.</p>'}`;
       $$('[data-pm]').forEach((b) => b.addEventListener('click', () => {
         if (reg.n < 1) { notify('warning'); return toast('Укажите, сколько мужчин и девушек'); }
