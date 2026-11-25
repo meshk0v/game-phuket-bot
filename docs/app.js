@@ -72,6 +72,38 @@ const myReg = (e) => MY.find((x) => x.e === e.id && x.d === `${e.date.getUTCFull
 const myBadge = (r) => (r.k === 'manager' ? '<span class="booked wait">⏳ Заявка у менеджера</span>' : `<span class="booked">✓ Вы записаны${r.c ? ' · подтверждено' : ''}</span>`);
 const fmtDate = (e) => `${e.date.getUTCDate()} ${MON[e.date.getUTCMonth()]}`;
 const priceTxt = (p) => (p === 0 ? 'Бесплатно' : p === null || p === undefined || p === '' ? 'Уточняйте' : `${p} ฿`);
+// Города с ценой «мужчины / девушки» в местной валюте. Оплаты в местной валюте пока нет — только рубли и USDT (реквизиты общие).
+const GENDER_PRICE = { bali: { cur: 'IDR', m: 600000, f: 400000, rub: { m: 3000, f: 2500 }, usdt: { m: 37, f: 30 } } };
+const gpOf = (e) => (e && e.price !== 0 ? GENDER_PRICE[e.city] : null);
+const num = (x) => Number(x).toLocaleString('ru-RU');
+const priceOf = (e) => { const g = gpOf(e); return g ? `от ${num(Math.min(g.m, g.f))} ${g.cur}` : priceTxt(e.price); };
+const newReg = (e) => (gpOf(e) ? { id: e.id, n: 1, m: 1, f: 0 } : { id: e.id, n: 1 });
+const peopleTxt = (r) => (r && r.m !== undefined ? `${r.n} чел. (муж.: ${r.m}, дев.: ${r.f})` : `${r?.n || 1} чел.`);
+// Счётчик людей: один («Сколько вас?») или два (мужчины / девушки)
+const stepperHtml = (e, r) => (gpOf(e)
+  ? [['m', 'Мужчины'], ['f', 'Девушки']].map(([k, t], i) => `<div class="stepper"${i ? ' style="margin-top:8px"' : ''}><div><div style="font-weight:500">${t}</div><div class="mute" style="font-size:12px">${num(gpOf(e)[k])} ${gpOf(e).cur}</div></div>
+      <div class="ctl"><button data-st="${k}:-1">−</button><output data-o="${k}">${r[k]}</output><button data-st="${k}:1">+</button></div></div>`).join('')
+  : `<div class="stepper"><div><div style="font-weight:500">Сколько вас?</div><div class="mute" style="font-size:12px">можно с друзьями</div></div>
+      <div class="ctl"><button data-st="n:-1">−</button><output data-o="n">${r.n}</output><button data-st="n:1">+</button></div></div>`);
+function bindStepper(r, onChange) {
+  $$('[data-st]').forEach((b) => b.addEventListener('click', () => {
+    const [k, d] = b.dataset.st.split(':'), v = r[k] + +d;
+    const m = k === 'm' ? v : r.m, f = k === 'f' ? v : r.f, n = k === 'n' ? v : m + f;
+    if (v < (k === 'n' ? 1 : 0) || n < 1 || n > 10) return notify('warning');
+    r[k] = v; if (k !== 'n') r.n = n; hapticSel();
+    const o = $(`[data-o="${k}"]`); if (o) o.textContent = v;
+    onChange();
+  }));
+}
+// Сумма в местной валюте (для показа) или по способу оплаты
+const localTotal = (e, r) => { const g = gpOf(e); return g ? `${num(g.m * r.m + g.f * r.f)} ${g.cur}` : `${e.price * r.n} ฿`; };
+const payTotal = (e, r, pay, method) => {
+  const g = gpOf(e);
+  if (method === 'thb') return !g && e.price > 0 ? `${e.price * r.n} ฿` : '';
+  if (method === 'rub') return !pay?.rub ? '' : g ? `${num(g.rub.m * r.m + g.rub.f * r.f)} ₽` : pay.rub.perPlayer ? `${pay.rub.perPlayer * r.n} ₽` : '';
+  if (method === 'usdt') return !pay?.usdt ? '' : g ? `${g.usdt.m * r.m + g.usdt.f * r.f} USDT` : pay.usdt.perPlayer ? `${pay.usdt.perPlayer * r.n} USDT` : '';
+  return '';
+};
 
 // Тексты ролей и правил — из сторис Game Phuket «Роли в мафии»
 const ROLES = [
@@ -437,7 +469,7 @@ function feature(e) {
     ${e.blue ? '' : MASK()}
     <span class="cap tag">${e === EVENTS[0] ? 'Ближайшая игра' : WD_FULL[e.dow]} · ${fmtDate(e)}</span>
     <h2 class="d">${esc(e.title)}</h2>
-    <div class="where">${e.time} · ${esc(e.place)} · <b>${priceTxt(e.price)}</b></div>
+    <div class="where">${e.time} · ${esc(e.place)} · <b>${priceOf(e)}</b></div>
     <div class="count" data-ts="${e.ts}"><div><b>–</b><span>дн</span></div><div><b>–</b><span>час</span></div><div><b>–</b><span>мин</span></div><div><b>–</b><span>сек</span></div></div>
     ${myReg(e) ? `<div class="feat-booked">${myBadge(myReg(e))}</div>` : `<button class="btn feat-btn" data-book="${esc(e.id)}">Записаться</button>`}
   </div>`;
@@ -449,7 +481,7 @@ function bindFeature() {
   $('[data-book]', f)?.addEventListener('click', (ev) => {
     ev.stopPropagation(); haptic('medium');
     const e = EVENTS.find((x) => x.id === ev.currentTarget.dataset.book); if (!e) return;
-    reg = { id: e.id, n: 1 };
+    reg = newReg(e);
     if (e.price === 0) return sendRegistration(e, 1, 'free');
     go(`pay/${e.id}`);
   });
@@ -475,31 +507,26 @@ const EventPage = {
     </section>
     <div class="facts">
       <div class="fact wide"><span>Где</span><b>${esc(e.place)}</b><div class="mute" style="font-size:13px;margin-top:2px">${esc(e.area)}</div></div>
-      <div class="fact"><span>Стоимость</span><b>${priceTxt(e.price)}</b></div>
+      ${gpOf(e) ? `<div class="fact wide"><span>Стоимость</span><b>Мужчины — ${num(gpOf(e).m)} ${gpOf(e).cur}<br>Девушки — ${num(gpOf(e).f)} ${gpOf(e).cur}</b></div>` : `<div class="fact"><span>Стоимость</span><b>${priceTxt(e.price)}</b></div>`}
       ${e.dur ? (() => { const [main, ...rest] = e.dur.split(' · '), note = rest.join(' · '); const long = !note && main.length > 18; return `<div class="fact ${note || long ? 'wide' : ''}"><span>Длительность</span><b class="${long ? 'long' : ''}">${esc(main)}</b>${note ? `<small class="fnote">${esc(note)}</small>` : ''}</div>`; })() : ''}
     </div>
     ${myReg(e) ? `<div class="booked-box">${myBadge(myReg(e))}<p>${myReg(e).k === 'manager' ? 'Менеджер свяжется с вами, чтобы помочь с оплатой.' : 'Ждём вас на игре! Если планы изменились — напишите нам.'}</p></div>` : `
-    <div class="stepper"><div><div style="font-weight:500">Сколько вас?</div><div class="mute" style="font-size:12px">можно с друзьями</div></div>
-      <div class="ctl"><button data-s="-1">−</button><output id="cnt">1</output><button data-s="1">+</button></div></div>
-    ${e.price ? `<div class="total"><span class="mute">Итого</span><b id="sum">${e.price} ฿</b></div>` : ''}`}
+    ${stepperHtml(e, newReg(e))}
+    ${e.price || gpOf(e) ? `<div class="total"><span class="mute">Итого</span><b id="sum">${localTotal(e, newReg(e))}</b></div>` : ''}`}
     <button class="btn ghost" style="margin-top:18px" data-go="ask/${esc(e.id)}">Задать вопрос по этой игре</button>`;
   },
   bind: (id) => {
     const e = EVENTS.find((x) => x.id === id) || EVENTS[0];
     if (!e || myReg(e)) return; // уже записан — кнопки «Записаться» нет
-    let n = 1;
-    const label = () => `Записаться${n > 1 ? ` · ${n} чел.` : ''}`;
-    $$('[data-s]').forEach((b) => b.addEventListener('click', () => {
-      const v = Math.min(10, Math.max(1, n + +b.dataset.s));
-      if (v === n) return notify('warning');
-      n = v; hapticSel();
-      $('#cnt').textContent = n;
-      if ($('#sum')) $('#sum').textContent = `${e.price * n} ฿`;
+    const r = newReg(e);
+    const label = () => `Записаться${r.n > 1 ? ` · ${r.n} чел.` : ''}`;
+    bindStepper(r, () => {
+      if ($('#sum')) $('#sum').textContent = localTotal(e, r);
       mainButton(label(), submit);
-    }));
+    });
     const submit = () => {
-      reg = { id: e.id, n };
-      if (e.price === 0) return sendRegistration(e, n, 'free');   // бесплатно — сразу запись, без оплаты
+      reg = { ...r };
+      if (e.price === 0) return sendRegistration(e, r.n, 'free');   // бесплатно — сразу запись, без оплаты
       go(`pay/${e.id}`);
     };
     mainButton(label(), submit);
@@ -507,7 +534,7 @@ const EventPage = {
 };
 
 /* ---------------- запись и оплата ---------------- */
-let reg = null;          // { id, n } — выбранное мероприятие и число человек
+let reg = null;          // { id, n, m?, f? } — мероприятие, число человек (на Бали — мужчины/девушки)
 let PAY = null;          // реквизиты, приходят с сервера только в Telegram
 let receipt = null;      // прикреплённый чек (File)
 let sending = false;
@@ -566,6 +593,7 @@ async function sendRegistration(e, n, method, comment = '') {
   sending = true;
   const fd = new FormData();
   fd.append('eventId', e.id); fd.append('date', isoDay(e)); fd.append('count', String(n)); fd.append('method', method);
+  if (gpOf(e) && reg?.m !== undefined) { fd.append('men', String(reg.m)); fd.append('women', String(reg.f)); }
   if (comment) fd.append('comment', comment);
   if (receipt && method !== 'manager' && method !== 'free') fd.append('receipt', receipt, receipt.name || 'receipt');
   tg?.MainButton.showProgress?.(); const fb = $('#fbtn'); if (fb) { fb.disabled = true; fb.textContent = 'Отправляем…'; }
@@ -600,7 +628,7 @@ const Pay = {
     const [id, method] = arg.split('/');
     const e = EVENTS.find((x) => x.id === id);
     if (!e) return `<div class="empty"><b class="d">Мероприятие не найдено</b><button class="btn" data-go="afisha">К афише</button></div>`;
-    if (!reg || reg.id !== id) reg = { id, n: 1 };
+    if (!reg || reg.id !== id) reg = newReg(e);
     return `
     <p class="cap">Запись на игру</p>
     <h1 class="d" style="font-size:40px;margin-top:8px">${esc(e.title)}</h1>
@@ -613,28 +641,25 @@ const Pay = {
     const box = $('#paybox'), n = reg.n;
     const pay = await loadPay();
     if (!document.contains(box)) return;
-    const thb = e.price > 0, rub = pay?.rub?.perPlayer, usdt = pay?.usdt?.perPlayer;
+    const thb = payTotal(e, reg, pay, 'thb'), rub = payTotal(e, reg, pay, 'rub'), usdt = payTotal(e, reg, pay, 'usdt');
 
     // шаг 1 — выбор способа
     if (!method) {
       receipt = null;
       const m = [
-        thb && ['thb', '🇹🇭', 'Тайский счёт', `${e.price * n} ฿ · QR PromptPay`],
-        rub && ['rub', '🇷🇺', 'Российский счёт', `${rub * n} ₽ · перевод на карту`],
-        usdt && ['usdt', '₮', 'Криптовалюта', `${usdt * n} USDT · ${esc(pay.usdt.network || 'TRC-20')}`],
+        thb && ['thb', '🇹🇭', 'Тайский счёт', `${thb} · QR PromptPay`],
+        rub && ['rub', '🇷🇺', 'Российский счёт', `${rub} · перевод на карту`],
+        usdt && ['usdt', '₮', 'Криптовалюта', `${usdt} · ${esc(pay.usdt.network || 'TRC-20')}`],
         ['manager', '💬', 'Нет такого способа', 'Связаться с менеджером'],
       ].filter(Boolean);
-      box.innerHTML = `<div class="stepper" style="margin-top:20px"><div><div style="font-weight:500">Сколько вас?</div><div class="mute" style="font-size:12px">можно с друзьями</div></div>
-          <div class="ctl"><button data-pn="-1">−</button><output>${n}</output><button data-pn="1">+</button></div></div>
+      box.innerHTML = `${stepperHtml(e, reg)}
+        ${gpOf(e) ? `<div class="total"><span class="mute">Итого</span><b>${localTotal(e, reg)}</b></div>` : ''}
         <div class="sec" style="margin-top:22px"><h3 class="d">Способ оплаты</h3></div>
+        ${gpOf(e) ? '<p class="hint" style="margin:-6px 0 12px">Оплата в местной валюте скоро появится. Пока можно оплатить в рублях или криптовалютой.</p>' : ''}
         <div class="pms">${m.map(([k, ic, t, s]) => `<button class="pm ${k === 'manager' ? 'alt' : ''}" data-pm="${k}"><span class="ic">${ic}</span><div><b>${t}</b><small>${s}</small></div><span class="go">›</span></button>`).join('')}</div>
         ${pay ? '' : '<p class="hint" style="margin-top:12px">Реквизиты недоступны. Откройте приложение из Telegram.</p>'}`;
       $$('[data-pm]').forEach((b) => b.addEventListener('click', () => { haptic(); go(`pay/${id}/${b.dataset.pm}`); }));
-      $$('[data-pn]').forEach((b) => b.addEventListener('click', () => {
-        const v = Math.min(10, Math.max(1, reg.n + +b.dataset.pn));
-        if (v === reg.n) return notify('warning');
-        hapticSel(); reg.n = v; route(); // перерисуем суммы
-      }));
+      bindStepper(reg, () => route()); // перерисуем суммы
       return;
     }
 
@@ -646,7 +671,7 @@ const Pay = {
       mainButton('Отправить заявку менеджеру', () => sendRegistration(e, n, 'manager', $('#pm-note').value.trim()));
       return;
     }
-    const amount = method === 'thb' ? `${e.price * n} ฿` : method === 'rub' ? `${rub * n} ₽` : `${usdt * n} USDT`;
+    const amount = method === 'thb' ? thb : method === 'rub' ? rub : usdt;
     if ((method === 'thb' && !thb) || (method === 'rub' && !rub) || (method === 'usdt' && !usdt)) { box.innerHTML = '<p class="mute">Способ недоступен.</p>'; return; }
     let details = '';
     if (method === 'thb') details = `<div class="qrbox" id="qrbox">${pay?.qr ? '<span class="mute">Загружаем QR…</span>' : '<span class="mute">QR недоступен</span>'}</div><p class="hint" style="text-align:center">Откройте банковское приложение → «Сканировать QR» → оплатите сумму выше.</p>`;
@@ -686,7 +711,7 @@ const PayDone = {
       <div class="tick">${paid ? '✓' : '✉'}</div>
       <h1 class="d">${paid ? 'Вы записаны<br><span class="red">на игру</span>' : 'Заявка<br><span class="red">отправлена</span>'}</h1>
       <p class="lead">${paid ? 'Хорошего дня и до встречи!' : 'Менеджер свяжется с вами в ближайшее время.'}</p>
-      ${e ? `<div class="ticket"><span class="cap">${esc(e.title)}</span><b class="d">${whenTxt(e)}</b><p>${esc(e.place)}${e.area ? ', ' + esc(e.area) : ''}</p><p>${(reg?.n || 1)} чел.</p></div>` : ''}
+      ${e ? `<div class="ticket"><span class="cap">${esc(e.title)}</span><b class="d">${whenTxt(e)}</b><p>${esc(e.place)}${e.area ? ', ' + esc(e.area) : ''}</p><p>${peopleTxt(reg)}</p></div>` : ''}
       ${e && aboutOf(e.city).tg ? `<div class="chat-cta"><b>Вступайте в наш чат</b>
         <button class="btn" data-chat>${SOC_ICON.tg}Вступить в чат</button></div>` : ''}
       <button class="btn ${e && aboutOf(e.city).tg ? 'ghost' : ''}" data-go="afisha" style="margin-top:10px">В афишу</button>
@@ -1086,7 +1111,7 @@ const Admin = {
       <div style="margin-top:14px">${evs.length ? evs.map((e) => `
         <button class="ev adm ${e.blue ? 'bl' : ''} ${e.active === false ? 'off' : ''}" data-go="adminevent/${esc(e.id)}">
           <div class="day">${evWhen(e)}</div><div class="ttl">${esc(e.title)}</div>
-          <div class="meta">${esc(e.place)} · ${priceTxt(e.price)}${e.active === false ? ' · <b>скрыто</b>' : ''}</div><span class="go">›</span>
+          <div class="meta">${esc(e.place)} · ${priceOf(e)}${e.active === false ? ' · <b>скрыто</b>' : ''}</div><span class="go">›</span>
         </button>`).join('') : '<p class="mute" style="padding:18px 2px">В этом городе пока нет мероприятий.</p>'}</div>
       <button class="btn" data-go="adminevent/new">+ Добавить мероприятие</button>` : '<p class="mute" style="padding:18px 2px">Городов пока нет.</p>'}
     <p class="cap" style="margin-top:22px;line-height:1.6">${API_OK ? 'Изменения сразу видны всем пользователям.' : 'Нет связи с сервером — сохранить изменения нельзя.'}</p>`}`;

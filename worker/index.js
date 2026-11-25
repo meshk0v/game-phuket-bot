@@ -161,6 +161,10 @@ const userOf = (req, env) => validateInitData(req.headers.get('X-Init-Data') || 
 const OK_TYPES = { 'image/jpeg': 'photo.jpg', 'image/png': 'photo.png', 'image/webp': 'photo.webp', 'application/pdf': 'receipt.pdf' };
 const METHOD_NAME = { thb: 'Тайский счёт (PromptPay)', rub: 'Российский счёт', usdt: 'Крипта (USDT TRC-20)', free: 'Бесплатно', manager: 'Нет возможности оплатить' };
 
+// Города с ценой «мужчины / девушки» (должно совпадать с GENDER_PRICE в docs/app.js). Оплаты в местной валюте пока нет.
+const GENDER_PRICE = { bali: { cur: 'IDR', m: 600000, f: 400000, rub: { m: 3000, f: 2500 }, usdt: { m: 37, f: 30 } } };
+const num = (x) => Number(x).toLocaleString('ru-RU');
+
 async function register(req, env, send) {
   const user = await userOf(req, env);
   if (!user) return send(401, { error: 'Откройте приложение из Telegram' });
@@ -175,16 +179,27 @@ async function register(req, env, send) {
   const city = state.config.cities.find((c) => c.id === ev.city);
   const date = String(f.get('date') || '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) return send(400, { error: 'Неверная дата' });
-  const n = Number(f.get('count'));
+  const gp = ev.price !== 0 ? GENDER_PRICE[ev.city] : null;
+  const legacy = gp && f.get('men') === null; // старая версия приложения прислала только count
+  const men = legacy ? Number(f.get('count')) : Number(f.get('men')), women = legacy ? 0 : Number(f.get('women'));
+  const n = gp ? men + women : Number(f.get('count'));
+  if (gp && !(Number.isInteger(men) && Number.isInteger(women) && men >= 0 && women >= 0)) return send(400, { error: 'Неверное количество' });
   if (!Number.isInteger(n) || n < 1 || n > 10) return send(400, { error: 'Неверное количество' });
   let method = String(f.get('method') || '');
   if (ev.price === 0) method = 'free';
   if (!['thb', 'rub', 'usdt', 'manager', 'free'].includes(method)) return send(400, { error: 'Неверный способ оплаты' });
   const pay = (await env.CONFIG.get('payments', 'json')) || {};
   let amount = '';
-  if (method === 'thb') { if (!(ev.price > 0)) return send(400, { error: 'Сумма не задана' }); amount = `${ev.price * n} ฿`; }
-  if (method === 'rub') { if (!pay.rub?.perPlayer) return send(400, { error: 'Способ недоступен' }); amount = `${pay.rub.perPlayer * n} ₽`; }
-  if (method === 'usdt') { if (!pay.usdt?.perPlayer) return send(400, { error: 'Способ недоступен' }); amount = `${pay.usdt.perPlayer * n} USDT`; }
+  if (gp) {
+    if (method === 'thb') return send(400, { error: 'Способ недоступен' });
+    if (method === 'rub') { if (!pay.rub) return send(400, { error: 'Способ недоступен' }); amount = `${num(gp.rub.m * men + gp.rub.f * women)} ₽`; }
+    if (method === 'usdt') { if (!pay.usdt) return send(400, { error: 'Способ недоступен' }); amount = `${gp.usdt.m * men + gp.usdt.f * women} USDT`; }
+  } else {
+    if (method === 'thb') { if (!(ev.price > 0)) return send(400, { error: 'Сумма не задана' }); amount = `${ev.price * n} ฿`; }
+    if (method === 'rub') { if (!pay.rub?.perPlayer) return send(400, { error: 'Способ недоступен' }); amount = `${pay.rub.perPlayer * n} ₽`; }
+    if (method === 'usdt') { if (!pay.usdt?.perPlayer) return send(400, { error: 'Способ недоступен' }); amount = `${pay.usdt.perPlayer * n} USDT`; }
+  }
+  const local = gp ? `${num(gp.m * men + gp.f * women)} ${gp.cur}` : '';
 
   const needFile = ['thb', 'rub', 'usdt'].includes(method);
   const file = f.get('receipt');
@@ -201,8 +216,8 @@ async function register(req, env, send) {
   const text = [
     head, '',
     `<blockquote>🎭 <b>${h(ev.title)}</b>\n📅 ${h(when)}\n📍 ${h(ev.place)}${ev.area ? ', ' + h(ev.area) : ''}${city ? ' (' + h(city.name) + ')' : ''}</blockquote>`, '',
-    `👥 <b>${n}</b> чел.${method === 'free' || method === 'manager' ? '' : ` · 💳 ${METHOD_NAME[method]}`}`,
-    ...(amount ? [`💰 <b>${h(amount)}</b>`] : []), '',
+    `👥 <b>${n}</b> чел.${gp ? ` (муж.: ${men}, дев.: ${women})` : ''}${method === 'free' || method === 'manager' ? '' : ` · 💳 ${METHOD_NAME[method]}`}`,
+    ...(amount ? [`💰 <b>${h(amount)}</b>`] : []), ...(local ? [`🏷 По прайсу: ${h(local)}`] : []), '',
     who(user),
     ...(comment ? ['', quote(comment)] : []),
   ].join('\n');
