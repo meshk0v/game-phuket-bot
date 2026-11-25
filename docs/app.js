@@ -430,7 +430,7 @@ const GALLERY = (() => {
 })();
 const MV = 2; // версия медиа — менять при замене файлов в docs/media
 const galleryHtml = () => (city !== GALLERY_CITY ? '' : `
-    <div class="sec"><h3 class="d">Как проходят <span class="red">игры</span></h3><span class="cap">фото и видео</span></div>
+    <div class="sec"><h3 class="d">Как проходят <span class="red">игры</span></h3></div>
     <div class="galw"><button class="gal-a l" data-ga="-1" aria-label="Назад">‹</button><button class="gal-a r" data-ga="1" aria-label="Вперёд">›</button><div class="gal">${GALLERY.map((g, k) => `<button class="gi ${g.v ? 'vid' : ''}" data-g="${k}" aria-label="${g.v ? 'Видео' : 'Фото'}"><img src="media/${g.v ? 'v' : 'p'}${g.i}t.webp?v=${MV}" alt="" loading="lazy"></button>`).join('')}</div></div>`);
 function openGallery(start) {
   const el = document.createElement('div');
