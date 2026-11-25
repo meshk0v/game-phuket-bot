@@ -23,6 +23,21 @@ body.notabs #app{padding-bottom:calc(var(--bot) + 110px)}
 .spark{display:inline-block;width:14px;height:14px}
 .spark path{fill:currentColor}
 
+/* ---------- галерея фото и видео ---------- */
+.gal{display:flex;gap:8px;overflow-x:auto;margin:0 -18px;padding:0 18px 4px;scroll-padding:0 18px;scroll-snap-type:x proximity;scrollbar-width:none}
+.gal::-webkit-scrollbar{display:none}
+.gi{flex:none;width:96px;height:96px;border-radius:14px;overflow:hidden;padding:0;position:relative;background:var(--s1);scroll-snap-align:start;box-shadow:0 0 0 1px var(--line)}
+.gi img{width:100%;height:100%;object-fit:cover;display:block}
+.gi.vid::after{content:'';position:absolute;left:50%;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;background:rgba(0,0,0,.55) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 7l9 5-9 5z' fill='white'/%3E%3C/svg%3E") center/16px no-repeat;backdrop-filter:blur(2px)}
+.gv{position:fixed;inset:0;z-index:60;background:#000;opacity:0;transition:opacity .25s}
+.gv.on{opacity:1}
+.gv-track{display:flex;height:100%;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}
+.gv-track::-webkit-scrollbar{display:none}
+.gv-s{flex:none;width:100%;height:100%;display:grid;place-items:center;scroll-snap-align:center;scroll-snap-stop:always}
+.gv-s img,.gv-s video{max-width:100%;max-height:100%;object-fit:contain;display:block}
+.gv-x{position:absolute;right:14px;top:calc(var(--tg-content-safe-area-inset-top,0px) + var(--tg-safe-area-inset-top,0px) + 14px);width:38px;height:38px;border-radius:50%;background:rgba(40,40,40,.8);color:#fff;font-size:15px;z-index:2}
+.gv-n{position:absolute;left:0;right:0;bottom:calc(var(--tg-safe-area-inset-bottom,0px) + 18px);text-align:center;color:#bbb;font-size:12px;letter-spacing:.08em;pointer-events:none}
+
 /* ---------- header ---------- */
 .bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
 .brand{display:flex;align-items:center;gap:9px}

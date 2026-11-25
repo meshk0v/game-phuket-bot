@@ -411,6 +411,46 @@ const Soon = {
 };
 
 let selDay = null;
+// Фото и видео с игр (Пхукет): лента маленьких превью на афише, по нажатию — полный экран со свайпом
+const GALLERY_CITY = 'phuket';
+const GALLERY = (() => {
+  const out = []; let p = 1;
+  for (let v = 1; v <= 11 || p <= 21; v++) {
+    if (v <= 11) out.push({ v: true, i: v });
+    for (let k = 0; k < 2 && p <= 21; k++) out.push({ v: false, i: p++ });
+  }
+  return out;
+})();
+const MV = 1; // версия медиа — менять при замене файлов в docs/media
+const galleryHtml = () => (city !== GALLERY_CITY ? '' : `
+    <div class="sec"><h3 class="d">Как проходят <span class="red">игры</span></h3><span class="cap">фото и видео</span></div>
+    <div class="gal">${GALLERY.map((g, k) => `<button class="gi ${g.v ? 'vid' : ''}" data-g="${k}" aria-label="${g.v ? 'Видео' : 'Фото'}"><img src="media/${g.v ? 'v' : 'p'}${g.i}t.webp?v=${MV}" alt="" loading="lazy"></button>`).join('')}</div>`);
+function openGallery(start) {
+  const el = document.createElement('div');
+  el.className = 'gv';
+  el.innerHTML = `<div class="gv-track">${GALLERY.map((g) => `<div class="gv-s">${g.v
+    ? `<video src="media/v${g.i}.mp4?v=${MV}" poster="media/v${g.i}.webp?v=${MV}" controls playsinline preload="none"></video>`
+    : `<img src="media/p${g.i}.webp?v=${MV}" alt="" loading="lazy">`}</div>`).join('')}</div>
+    <button class="gv-x" aria-label="Закрыть">✕</button><div class="gv-n"></div>`;
+  document.body.append(el);
+  const tr = $('.gv-track', el), n = $('.gv-n', el), vids = $$('video', el);
+  let at = start;
+  const show = () => { n.textContent = `${at + 1} / ${GALLERY.length}`; vids.forEach((v) => { if (v.closest('.gv-s') !== tr.children[at]) v.pause(); }); };
+  tr.scrollLeft = start * tr.clientWidth;
+  show();
+  const first = $('video', tr.children[start]); if (first) first.play().catch(() => {});
+  tr.addEventListener('scroll', () => { const k = Math.round(tr.scrollLeft / tr.clientWidth); if (k !== at) { at = k; hapticSel(); show(); } }, { passive: true });
+  requestAnimationFrame(() => el.classList.add('on'));
+  const close = (instant) => {
+    sheetClose = null; vids.forEach((v) => v.pause());
+    if (instant) return el.remove();
+    el.classList.remove('on'); setTimeout(() => el.remove(), 250);
+    if (inTG && TABS.includes(cur.split('/')[0])) tg.BackButton.hide();
+  };
+  sheetClose = close;
+  if (inTG) tg.BackButton.show();
+  $('.gv-x', el).addEventListener('click', () => { haptic(); close(); });
+}
 const Afisha = {
   html: () => {
     if (!EVENTS.length) return `${header(`<button class="pill" data-pick aria-label="Сменить город"><i></i>${esc(cityById(city).name)}<span class="chev">▾</span></button>`)}
@@ -436,6 +476,7 @@ const Afisha = {
         <div class="meta"><b>${e.time}</b> ${esc(e.place)}${e.area && !e.blue ? ', ' + esc(e.area) : ''}</div>
         <span class="go">›</span>
       </button>`).join('')}
+    ${galleryHtml()}
     <div class="sec"><h3 class="d">Впервые?</h3></div>
     <button class="ev" data-go="games" style="border-left-color:#fff">
       <div class="ttl">Я никогда не играл в Мафию. Нужно готовиться?</div>
@@ -445,6 +486,7 @@ const Afisha = {
   bind: () => {
     $('[data-pick]')?.addEventListener('click', () => { haptic(); openCitySheet(); });
     if (!EVENTS.length) return;
+    $$('[data-g]').forEach((b) => b.addEventListener('click', () => { haptic(); openGallery(+b.dataset.g); }));
     $$('[data-day]').forEach((b) => b.addEventListener('click', () => {
       hapticSel(); selDay = b.dataset.day;
       $$('[data-day]').forEach((x) => x.classList.toggle('on', x === b));
