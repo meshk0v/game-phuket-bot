@@ -413,6 +413,13 @@ const Soon = {
 let selDay = null;
 // Фото и видео с игр (Пхукет): лента маленьких превью на афише, по нажатию — полный экран со свайпом
 const GALLERY_CITY = 'phuket';
+if (!matchMedia('(pointer:coarse)').matches) document.documentElement.classList.add('desk'); // компьютер: стрелки в галерее
+// клавиши ← → листают ленту на афише (когда просмотр на весь экран закрыт — там свои)
+document.addEventListener('keydown', (e) => {
+  if ((e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') || $('.gv') || /INPUT|TEXTAREA/.test(document.activeElement?.tagName || '')) return;
+  const g = $('.gal'); if (!g) return;
+  g.scrollBy({ left: (e.key === 'ArrowRight' ? 1 : -1) * g.clientWidth * 0.8, behavior: 'smooth' });
+});
 const GALLERY = (() => {
   const out = []; let p = 1;
   for (let v = 1; v <= 11 || p <= 21; v++) {
@@ -424,25 +431,31 @@ const GALLERY = (() => {
 const MV = 1; // версия медиа — менять при замене файлов в docs/media
 const galleryHtml = () => (city !== GALLERY_CITY ? '' : `
     <div class="sec"><h3 class="d">Как проходят <span class="red">игры</span></h3><span class="cap">фото и видео</span></div>
-    <div class="gal">${GALLERY.map((g, k) => `<button class="gi ${g.v ? 'vid' : ''}" data-g="${k}" aria-label="${g.v ? 'Видео' : 'Фото'}"><img src="media/${g.v ? 'v' : 'p'}${g.i}t.webp?v=${MV}" alt="" loading="lazy"></button>`).join('')}</div>`);
+    <div class="galw"><button class="gal-a l" data-ga="-1" aria-label="Назад">‹</button><button class="gal-a r" data-ga="1" aria-label="Вперёд">›</button><div class="gal">${GALLERY.map((g, k) => `<button class="gi ${g.v ? 'vid' : ''}" data-g="${k}" aria-label="${g.v ? 'Видео' : 'Фото'}"><img src="media/${g.v ? 'v' : 'p'}${g.i}t.webp?v=${MV}" alt="" loading="lazy"></button>`).join('')}</div></div>`);
 function openGallery(start) {
   const el = document.createElement('div');
   el.className = 'gv';
   el.innerHTML = `<div class="gv-track">${GALLERY.map((g) => `<div class="gv-s">${g.v
     ? `<video src="media/v${g.i}.mp4?v=${MV}" poster="media/v${g.i}.webp?v=${MV}" controls playsinline preload="none"></video>`
     : `<img src="media/p${g.i}.webp?v=${MV}" alt="" loading="lazy">`}</div>`).join('')}</div>
-    <button class="gv-x" aria-label="Закрыть">✕</button><div class="gv-n"></div>`;
+    <button class="gv-x" aria-label="Закрыть">✕</button><div class="gv-n"></div>
+    <button class="gv-a l" data-d="-1" aria-label="Назад">‹</button><button class="gv-a r" data-d="1" aria-label="Вперёд">›</button>`;
   document.body.append(el);
   const tr = $('.gv-track', el), n = $('.gv-n', el), vids = $$('video', el);
   let at = start;
-  const show = () => { n.textContent = `${at + 1} / ${GALLERY.length}`; vids.forEach((v) => { if (v.closest('.gv-s') !== tr.children[at]) v.pause(); }); };
+  const show = () => { $('.gv-a.l', el).disabled = at === 0; $('.gv-a.r', el).disabled = at === GALLERY.length - 1; n.textContent = `${at + 1} / ${GALLERY.length}`; vids.forEach((v) => { if (v.closest('.gv-s') !== tr.children[at]) v.pause(); }); };
   tr.scrollLeft = start * tr.clientWidth;
   show();
   const first = $('video', tr.children[start]); if (first) first.play().catch(() => {});
   tr.addEventListener('scroll', () => { const k = Math.round(tr.scrollLeft / tr.clientWidth); if (k !== at) { at = k; hapticSel(); show(); } }, { passive: true });
   requestAnimationFrame(() => el.classList.add('on'));
+  // на компьютере — стрелки на экране и на клавиатуре
+  const step = (d) => { const k = Math.min(GALLERY.length - 1, Math.max(0, at + d)); tr.scrollTo({ left: k * tr.clientWidth, behavior: 'smooth' }); };
+  $$('.gv-a', el).forEach((b) => b.addEventListener('click', () => step(+b.dataset.d)));
+  const onKey = (e) => { if (e.key === 'ArrowRight') step(1); else if (e.key === 'ArrowLeft') step(-1); else if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
   const close = (instant) => {
-    sheetClose = null; vids.forEach((v) => v.pause());
+    sheetClose = null; vids.forEach((v) => v.pause()); document.removeEventListener('keydown', onKey);
     if (instant) return el.remove();
     el.classList.remove('on'); setTimeout(() => el.remove(), 250);
     if (inTG && TABS.includes(cur.split('/')[0])) tg.BackButton.hide();
@@ -487,6 +500,7 @@ const Afisha = {
     $('[data-pick]')?.addEventListener('click', () => { haptic(); openCitySheet(); });
     if (!EVENTS.length) return;
     $$('[data-g]').forEach((b) => b.addEventListener('click', () => { haptic(); openGallery(+b.dataset.g); }));
+    $$('[data-ga]').forEach((b) => b.addEventListener('click', () => { const g = $('.gal'); g.scrollBy({ left: +b.dataset.ga * g.clientWidth * 0.8, behavior: 'smooth' }); }));
     $$('[data-day]').forEach((b) => b.addEventListener('click', () => {
       hapticSel(); selDay = b.dataset.day;
       $$('[data-day]').forEach((x) => x.classList.toggle('on', x === b));
