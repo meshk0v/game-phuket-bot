@@ -194,7 +194,7 @@ const MASK = (cls = '') => `
   <ellipse cx="66" cy="58" rx="26" ry="14" fill="#fff" opacity=".13" transform="rotate(-28 66 58)"/>
   <ellipse cx="58" cy="168" rx="8" ry="24" fill="#fff" opacity=".05"/>
 </svg>`;
-const LOGO = '<img class="logo" src="logo.png" alt="Game Phuket" width="52" height="52">';
+const LOGO = '<img class="logo" src="logo.svg" alt="Game Phuket" width="130" height="46">';
 const header = (right = '') => `<div class="bar"><div class="brand">${LOGO}</div>${right}</div>`;
 
 /* ---------------- Telegram ---------------- */
