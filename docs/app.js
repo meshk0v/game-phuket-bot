@@ -875,7 +875,7 @@ const Order = {
   <div class="field" style="margin-top:26px"><label>Что проводим<b id="fcount"></b></label>
     <div class="formats" style="margin-top:0">${FORMATS.map((f) => `
       <button class="fmt ${order.fmts.has(f.n) ? 'on' : ''}" data-f="${f.n}"><span class="d">${f.n}</span><small>${f.s}</small></button>`).join('')}</div></div>
-  <button class="custom-btn" data-go="custom"><span class="ic">✨</span><div><b>Своё мероприятие</b><small>Опишите, что вы задумали, — заявка сразу уйдёт менеджеру</small></div><span class="go">›</span></button>
+  <button class="custom-btn" data-go="custom"><span class="ic">✨</span><div><b>Своё мероприятие</b><small>Опишите свои предпочтения по мероприятию — менеджер сразу с вами свяжется</small></div><span class="go">›</span></button>
   <div class="field"><label>Гостей<b id="gv">${order.guests}</b></label><input type="range" id="guests" min="5" max="60" step="1" value="${order.guests}"></div>
   <div class="field"><label>Язык игры</label><div class="seg">${['RU', 'EN'].map((l) => `<button data-l="${l}" class="${order.lang === l ? 'on' : ''}">${l === 'RU' ? 'Русский' : 'English'}</button>`).join('')}</div></div>
   <div class="field"><label>Дата и контакты</label>
