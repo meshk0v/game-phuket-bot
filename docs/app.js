@@ -77,7 +77,7 @@ const GENDER_PRICE = { bali: { cur: 'IDR', m: 600000, f: 400000, rub: { m: 3000,
 const gpOf = (e) => (e && e.price !== 0 ? GENDER_PRICE[e.city] : null);
 const num = (x) => Number(x).toLocaleString('ru-RU');
 const priceOf = (e) => { const g = gpOf(e); return g ? `от ${num(Math.min(g.m, g.f))} ${g.cur}` : priceTxt(e.price); };
-const newReg = (e) => (gpOf(e) ? { id: e.id, n: 1, m: 1, f: 0 } : { id: e.id, n: 1 });
+const newReg = (e) => (gpOf(e) ? { id: e.id, n: 0, m: 0, f: 0 } : { id: e.id, n: 1 }); // на Бали гость сам выбирает, сколько мужчин и девушек
 const peopleTxt = (r) => (r && r.m !== undefined ? `${r.n} чел. (муж.: ${r.m}, дев.: ${r.f})` : `${r?.n || 1} чел.`);
 // Счётчик людей: один («Сколько вас?») или два (мужчины / девушки)
 const stepperHtml = (e, r) => (gpOf(e)
@@ -89,7 +89,7 @@ function bindStepper(r, onChange) {
   $$('[data-st]').forEach((b) => b.addEventListener('click', () => {
     const [k, d] = b.dataset.st.split(':'), v = r[k] + +d;
     const m = k === 'm' ? v : r.m, f = k === 'f' ? v : r.f, n = k === 'n' ? v : m + f;
-    if (v < (k === 'n' ? 1 : 0) || n < 1 || n > 10) return notify('warning');
+    if (v < (k === 'n' ? 1 : 0) || n > 10) return notify('warning');
     r[k] = v; if (k !== 'n') r.n = n; hapticSel();
     const o = $(`[data-o="${k}"]`); if (o) o.textContent = v;
     onChange();
@@ -525,6 +525,7 @@ const EventPage = {
       mainButton(label(), submit);
     });
     const submit = () => {
+      if (r.n < 1) { notify('warning'); return toast('Укажите, сколько мужчин и девушек'); }
       reg = { ...r };
       if (e.price === 0) return sendRegistration(e, r.n, 'free');   // бесплатно — сразу запись, без оплаты
       go(`pay/${e.id}`);
@@ -632,7 +633,7 @@ const Pay = {
     return `
     <p class="cap">Запись на игру</p>
     <h1 class="d" style="font-size:40px;margin-top:8px">${esc(e.title)}</h1>
-    <p class="mute" style="margin-top:8px;font-size:14px">${whenTxt(e)} · ${esc(e.place)} · ${reg.n} чел.</p>
+    <p class="mute" style="margin-top:8px;font-size:14px">${whenTxt(e)} · ${esc(e.place)}${reg.n ? ` · ${reg.n} чел.` : ''}</p>
     <div id="paybox"><p class="mute" style="padding:30px 0">Загружаем способы оплаты…</p></div>`;
   },
   bind: async (arg) => {
@@ -658,12 +659,16 @@ const Pay = {
         ${gpOf(e) ? '<p class="hint" style="margin:-6px 0 12px">Оплата в местной валюте скоро появится. Пока можно оплатить в рублях или криптовалютой.</p>' : ''}
         <div class="pms">${m.map(([k, ic, t, s]) => `<button class="pm ${k === 'manager' ? 'alt' : ''}" data-pm="${k}"><span class="ic">${ic}</span><div><b>${t}</b><small>${s}</small></div><span class="go">›</span></button>`).join('')}</div>
         ${pay ? '' : '<p class="hint" style="margin-top:12px">Реквизиты недоступны. Откройте приложение из Telegram.</p>'}`;
-      $$('[data-pm]').forEach((b) => b.addEventListener('click', () => { haptic(); go(`pay/${id}/${b.dataset.pm}`); }));
+      $$('[data-pm]').forEach((b) => b.addEventListener('click', () => {
+        if (reg.n < 1) { notify('warning'); return toast('Укажите, сколько мужчин и девушек'); }
+        haptic(); go(`pay/${id}/${b.dataset.pm}`);
+      }));
       bindStepper(reg, () => route()); // перерисуем суммы
       return;
     }
 
     // шаг 2 — реквизиты и чек
+    if (reg.n < 1) { box.innerHTML = `<p class="mute" style="padding:30px 0">Сначала укажите, сколько вас.</p><button class="btn" data-go="pay/${esc(id)}">Назад</button>`; return; }
     if (method === 'manager') {
       box.innerHTML = `<div class="sec" style="margin-top:22px"><h3 class="d">Связаться с менеджером</h3></div>
         <p class="lead" style="font-size:14px">Заявка уйдёт менеджеру с пометкой «нет возможности оплатить». Он свяжется с вами и подскажет, как оплатить.</p>
