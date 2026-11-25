@@ -31,10 +31,10 @@ body.notabs #app{padding-bottom:calc(var(--bot) + 110px)}
 .gi.vid::after{content:'';position:absolute;left:50%;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;background:rgba(0,0,0,.55) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 7l9 5-9 5z' fill='white'/%3E%3C/svg%3E") center/16px no-repeat;backdrop-filter:blur(2px)}
 .galw{position:relative}
 .gal-a,.gv-a{display:none}
-html.desk .gal-a{display:grid;place-items:center;position:absolute;top:50%;margin-top:-19px;z-index:2;width:34px;height:34px;border-radius:50%;background:rgba(20,20,20,.85);color:#fff;font-size:22px;line-height:1;box-shadow:0 0 0 1px var(--line2)}
+html.desk .gal-a{display:grid;place-items:center;position:absolute;top:50%;margin-top:-24px;z-index:2;width:46px;height:46px;border-radius:50%;background:rgba(20,20,20,.85);color:#fff;font-size:30px;line-height:1;box-shadow:0 0 0 1px var(--line2)}
 html.desk .gal-a.l{left:-6px}
 html.desk .gal-a.r{right:-6px}
-html.desk .gv-a{display:grid;place-items:center;position:absolute;top:50%;margin-top:-24px;z-index:2;width:48px;height:48px;border-radius:50%;background:rgba(40,40,40,.8);color:#fff;font-size:30px;line-height:1}
+html.desk .gv-a{display:grid;place-items:center;position:absolute;top:50%;margin-top:-34px;z-index:2;width:68px;height:68px;border-radius:50%;background:rgba(40,40,40,.8);color:#fff;font-size:44px;line-height:1}
 html.desk .gv-a.l{left:16px}
 html.desk .gv-a.r{right:16px}
 html.desk .gv-a:disabled{opacity:.25}
