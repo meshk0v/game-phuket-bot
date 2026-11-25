@@ -483,10 +483,10 @@ const Afisha = {
     <div id="feat">${feature(sel)}</div>
     <div class="sec"><h3 class="d">Вся неделя</h3></div>
     ${EVENTS.map((e) => `
-      <button class="ev ${e.blue ? 'bl' : ''} ${myReg(e) ? 'is-booked' : ''}" data-go="event/${esc(e.id)}">${myReg(e) ? myBadge(myReg(e)) : ''}
+      <button class="ev ${e.blue ? 'bl' : ''} ${myReg(e) ? 'is-booked' : ''}" data-go="event/${esc(e.id)}">
         <div class="day">${WD_FULL[e.dow]}, ${fmtDate(e)}</div>
         <div class="ttl">${esc(e.type || e.title)}</div>
-        <div class="meta"><b>${e.time}</b> ${esc(e.place)}${e.area && !e.blue ? ', ' + esc(e.area) : ''}</div>
+        <div class="meta"><b>${e.time}</b> ${esc(e.place)}${e.area && !e.blue ? ', ' + esc(e.area) : ''}</div>${myReg(e) ? `<div class="ev-b">${myBadge(myReg(e))}</div>` : ''}
         <span class="go">›</span>
       </button>`).join('')}
     ${galleryHtml()}

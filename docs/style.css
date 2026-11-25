@@ -383,7 +383,7 @@ html:not([data-mobile]) .toast{top:auto;bottom:calc(var(--bot) + 160px)}
 .booked.wait{background:rgba(255,190,60,.12);border-color:rgba(255,190,60,.45);color:#ffc95c}
 .feat-booked{margin-top:14px;position:relative}
 .feat-booked .booked{font-size:14px;padding:10px 16px}
-.ev.is-booked .booked{position:absolute;right:38px;top:14px;padding:3px 9px;font-size:11px}
+.ev .ev-b{margin-top:8px}.ev.is-booked .booked{padding:3px 9px;font-size:11px}
 .booked-box{margin-top:20px;border:1px solid rgba(43,182,115,.4);border-radius:16px;padding:16px;background:rgba(43,182,115,.06)}
 .booked-box p{color:#bdbdbd;font-size:14px;margin-top:10px}
 
