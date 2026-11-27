@@ -1,6 +1,7 @@
 // Cloudflare Worker: API для мини-аппа Game Phuket (города и афиша).
 // Хранилище — Workers KV (ключ "state"). Тот же API, что и в server.js.
 import DEFAULT_CFG from '../docs/default-config.json';
+import { gpEnabled, gpGames } from './gpApi.js';
 
 const enc = new TextEncoder();
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -173,7 +174,7 @@ async function register(req, env, send) {
   if (!rate.ok) return send(429, { error: 'Слишком много заявок, попробуйте через час' });
 
   const f = await req.formData();
-  const state = await readState(env);
+  const state = await readAfisha(env);
   const ev = state.config.events.find((e) => e.id === f.get('eventId') && e.active !== false);
   if (!ev) return send(400, { error: 'Мероприятие не найдено' });
   const city = state.config.cities.find((c) => c.id === ev.city);
@@ -260,7 +261,7 @@ async function request(req, env, send) {
   let head, lines = [];
   // вопрос по конкретной игре: проверяем мероприятие по конфигу, дату — по формату
   let about = '', evTitle = '';
-  const st = await readState(env);
+  const st = await readAfisha(env);
   let cityId = st.config.cities.some((c) => c.id === b.city) ? b.city : '';
   if (b.eventId) {
     const ev = st.config.events.find((e) => e.id === b.eventId);
@@ -370,6 +371,35 @@ async function onUpdate(env, u) {
 
 const readState = async (env) => (await env.CONFIG.get('state', 'json')) || { rev: 1, config: DEFAULT_CFG };
 
+/* ---------- Афиша из админки клуба ---------- */
+const CLUB_CITY = 'phuket'; // в API клуба нет городов: все игры — пхукетские, остальные города берутся из KV
+const clubEvent = (g) => ({
+  id: 'gp' + g.id, city: CLUB_CITY, repeat: 'once', date: g.starts_at.slice(0, 10), time: g.starts_at.slice(11, 16),
+  type: g.format?.name_ru || 'Игра', title: g.format?.name_ru || 'Игра',
+  place: g.venue?.name_ru || 'Место уточняется', area: g.district?.name || '',
+  map: /^https:\/\//.test(g.venue?.maps_url || '') ? g.venue.maps_url : '',
+  price: Number.isFinite(g.price_thb) ? g.price_thb : null, dur: '', desc: '', blue: false, active: true,
+});
+let clubCache = { at: 0, events: [] }; // клуб разрешает кэшировать список игр не дольше 60 секунд
+async function clubEvents(env) {
+  if (!gpEnabled(env)) return [];
+  if (Date.now() - clubCache.at < 60e3) return clubCache.events;
+  try {
+    const { games } = await gpGames(env);
+    clubCache = { at: Date.now(), events: (games || []).filter((g) => g?.id && g.starts_at).map(clubEvent) };
+  } catch (e) {
+    console.log('club api:', e.code, e.message);
+    return [];
+  }
+  return clubCache.events;
+}
+// Пока в админке клуба нет игр (или она недоступна), показываем прежнюю афишу из KV
+async function readAfisha(env) {
+  const state = await readState(env), club = await clubEvents(env);
+  if (!club.length) return state;
+  return { ...state, config: { ...state.config, events: [...club, ...state.config.events.filter((e) => e.city !== CLUB_CITY)] } };
+}
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
@@ -382,7 +412,7 @@ export default {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
     try {
-      if (req.method === 'GET' && url.pathname === '/api/config') return send(200, await readState(env));
+      if (req.method === 'GET' && url.pathname === '/api/config') return send(200, await readAfisha(env));
       if (req.method === 'POST' && url.pathname === '/api/me') return send(200, { isAdmin: await isAdmin(req, env) });
       if (req.method === 'POST' && url.pathname === '/api/tg') {
         if (!env.TG_WEBHOOK_SECRET || req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== env.TG_WEBHOOK_SECRET) return new Response('forbidden', { status: 403 });

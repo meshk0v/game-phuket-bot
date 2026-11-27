@@ -9,6 +9,7 @@ id = "84e01df014ec46cfb3bab9daf3236437"
 
 [vars]
 WEBAPP_URL = "https://meshk0v.github.io/game-phuket-bot/"
+GP_API_URL = "https://admin.gamephuket.com/api/bot"
 
 # Секреты (BOT_TOKEN, ADMIN_IDS) задаются командой `wrangler secret put`, в файл не пишутся.
 # Дополнительные адреса сайта для CORS — через [vars] CORS_ORIGINS = "https://example.com"
