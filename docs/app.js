@@ -1009,7 +1009,7 @@ const Custom = {
 const Club = {
   html: () => {
     const weekly = EVENTS.filter((x) => x.repeat !== 'once').length, ab = aboutOf(city);
-    const stats = [ab.members ? [esc(ab.members), 'участников'] : null, weekly ? [String(weekly), 'игр в неделю'] : null].filter(Boolean);
+    const stats = [weekly ? [String(weekly), 'игр в неделю'] : null].filter(Boolean);
     const socials = [['tg', 'Чат в Telegram'], ['ig', 'Instagram'], ['wa', 'WhatsApp'], ['site', 'Сайт']].filter(([k]) => ab[k]);
     return `
   ${header()}
