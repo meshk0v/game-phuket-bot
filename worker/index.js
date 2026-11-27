@@ -223,11 +223,12 @@ async function register(req, env, send) {
     ...(comment ? ['', quote(comment)] : []),
   ].join('\n');
 
-  // запись о заявке — для кнопки «Подтвердить» (хранится 60 дней)
+  // запись о заявке — для кнопки «Обработано» (хранится 60 дней)
   const rid = crypto.randomUUID().slice(0, 8), kind = method === 'manager' ? 'manager' : 'paid';
   const chatUrl = city?.about?.tg || '';
   await env.CONFIG.put('reg:' + rid, JSON.stringify({ uid: user.id, uname: user.username || '', html: text, file: !!hasFile, kind, title: ev.title, when, place: ev.place, chat: chatUrl, city: ev.city, name: fullName(user), n }), { expirationTtl: 60 * 86400 });
-  const markup = { inline_keyboard: [[{ text: kind === 'manager' ? '✅ Обработано' : '✅ Подтвердить', callback_data: 'ok:' + rid, style: 'success' }], profileRow(user)] };
+  // оплату отдельно не подтверждают: присланный чек и есть подтверждение. Кнопка нужна только для заявки без оплаты
+  const markup = { inline_keyboard: [...(kind === 'manager' ? [[{ text: '✅ Обработано', callback_data: 'ok:' + rid, style: 'success' }]] : []), profileRow(user)] };
 
   const logBase = { ...userLog(user), c: ev.city, e: ev.title, d: when, p: n, m: METHOD_NAME[method], s: amount, k: kind, r: rid };
   const delivered = await deliver(env, ev.city, text, hasFile ? file : null, markup, logBase);
