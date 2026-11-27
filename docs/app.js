@@ -610,11 +610,7 @@ function legacyCopy(t, ok) {
 }
 // Фото сжимаем до 1600 px (JPEG) — чек остаётся читаемым и быстро отправляется
 async function prepReceipt(file) {
-  if (file.type === 'application/pdf') {
-    if (file.size > 8e6) throw new Error('Файл больше 8 МБ');
-    return file;
-  }
-  if (!file.type.startsWith('image/')) throw new Error('Нужна фотография или PDF');
+  if (!file.type.startsWith('image/')) throw new Error('Нужна фотография или скриншот');
   const asIs = () => { if (file.size > 8e6 || !/^image\/(jpeg|png|webp)$/.test(file.type)) throw new Error('Фото больше 8 МБ или неподдерживаемый формат'); return file; };
   try {
     const bmp = await Promise.race([
@@ -730,7 +726,7 @@ const Pay = {
       <div class="amount"><span>К оплате</span><b>${amount}</b></div>
       ${details}
       <div class="sec" style="margin-top:26px"><h3 class="d">Чек об оплате</h3></div>
-      <label class="attach" id="attach"><input type="file" id="rc" accept="image/*,application/pdf"><span class="ico">📎</span><div><b id="rc-t">Прикрепить чек</b><small id="rc-s">Фото, скриншот или PDF</small></div></label>
+      <label class="attach" id="attach"><input type="file" id="rc" accept="image/*"><span class="ico">📎</span><div><b id="rc-t">Прикрепить чек</b><small id="rc-s">Фото или скриншот</small></div></label>
       <img id="rc-img" class="rcimg" alt="" hidden>`;
     $$('[data-copy]').forEach((b) => b.addEventListener('click', () => copyText(b.dataset.copy)));
     if (method === 'thb' && pay?.qr) loadQr().then((u) => { const q = $('#qrbox'); if (q) q.innerHTML = u ? `<img src="${u}" alt="QR для оплаты">` : '<span class="mute">Не удалось загрузить QR</span>'; });

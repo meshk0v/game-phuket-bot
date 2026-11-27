@@ -100,11 +100,11 @@ const quote = (s) => `<blockquote${s.length > 300 ? ' expandable' : ''}>${h(s)}<
 async function post(env, chat, thread, text, file, markup) {
   const base = { chat_id: chat, parse_mode: 'HTML', ...(thread ? { message_thread_id: thread } : {}) };
   if (!file) return tgJson(env, 'sendMessage', { ...base, text, ...(markup ? { reply_markup: markup } : {}) });
-  const isPdf = file.type === 'application/pdf', fd = new FormData();
+  const fd = new FormData();
   for (const [k, v] of Object.entries({ ...base, caption: text })) fd.append(k, String(v));
   if (markup) fd.append('reply_markup', JSON.stringify(markup));
-  fd.append(isPdf ? 'document' : 'photo', file, OK_TYPES[file.type]);
-  return tgJson(env, isPdf ? 'sendDocument' : 'sendPhoto', fd);
+  fd.append('photo', file, OK_TYPES[file.type]);
+  return tgJson(env, 'sendPhoto', fd);
 }
 // Менеджеры по городам: секрет CITY_MANAGERS = "phuket:111,bali:222" (несколько id через |)
 function cityManagers(env, cityId) {
@@ -159,7 +159,7 @@ async function rateOk(env, user, kind, max) {
   return { ok: used < max, bump: () => env.CONFIG.put(key, String(used + 1), { expirationTtl: 3600 }) };
 }
 const userOf = (req, env) => validateInitData(req.headers.get('X-Init-Data') || '', env.BOT_TOKEN);
-const OK_TYPES = { 'image/jpeg': 'photo.jpg', 'image/png': 'photo.png', 'image/webp': 'photo.webp', 'application/pdf': 'receipt.pdf' };
+const OK_TYPES = { 'image/jpeg': 'photo.jpg', 'image/png': 'photo.png', 'image/webp': 'photo.webp' };
 const METHOD_NAME = { thb: 'Тайский счёт (PromptPay)', rub: 'Российский счёт', usdt: 'Крипта (USDT TRC-20)', free: 'Бесплатно', manager: 'Нет возможности оплатить' };
 
 // Города с ценой «мужчины / девушки» (должно совпадать с GENDER_PRICE в docs/app.js). Оплаты в местной валюте пока нет.
@@ -206,7 +206,7 @@ async function register(req, env, send) {
   const file = f.get('receipt');
   const hasFile = file && typeof file === 'object' && file.size > 0;
   if (needFile && !hasFile) return send(400, { error: 'Прикрепите чек об оплате' });
-  if (hasFile && (file.size > 8e6 || !OK_TYPES[file.type])) return send(400, { error: 'Чек: фото (JPG, PNG) или PDF до 8 МБ' });
+  if (hasFile && (file.size > 8e6 || !OK_TYPES[file.type])) return send(400, { error: 'Чек: фото или скриншот (JPG, PNG) до 8 МБ' });
 
   const d = new Date(date + 'T00:00:00Z');
   const when = `${WD_FULL[d.getUTCDay()]}, ${d.getUTCDate()} ${MON[d.getUTCMonth()]}, ${ev.time}`;
