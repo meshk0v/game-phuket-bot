@@ -463,7 +463,7 @@ const Afisha = {
     if (!EVENTS.length) return `${header(`<button class="pill" data-pick aria-label="Сменить город"><i></i>${esc(cityById(city).name)}<span class="chev">▾</span></button>`)}
       <div class="ahead"><h1 class="d">Афиша</h1></div>
       <div class="empty"><b class="d">Пока пусто</b><p>В этом городе ещё нет запланированных игр. Загляните позже или напишите нам.</p>
-      <button class="btn ghost" data-go="ask">Задать вопрос</button></div>`;
+      <button class="btn ghost" data-go="ask">Задать вопрос</button></div>${galleryHtml()}`;
     const first = EVENTS[0], last = EVENTS[EVENTS.length - 1];
     const range = first.date.getUTCMonth() === last.date.getUTCMonth()
       ? `${first.date.getUTCDate()} – ${fmtDate(last)}` : `${fmtDate(first)} – ${fmtDate(last)}`;
@@ -492,9 +492,9 @@ const Afisha = {
   },
   bind: () => {
     $('[data-pick]')?.addEventListener('click', () => { haptic(); openCitySheet(); });
-    if (!EVENTS.length) return;
     $$('[data-g]').forEach((b) => b.addEventListener('click', () => { haptic(); openGallery(+b.dataset.g); }));
     $$('[data-ga]').forEach((b) => b.addEventListener('click', () => { const g = $('.gal'); g.scrollBy({ left: +b.dataset.ga * g.clientWidth * 0.8, behavior: 'smooth' }); }));
+    if (!EVENTS.length) return;
     $$('[data-day]').forEach((b) => b.addEventListener('click', () => {
       hapticSel(); selDay = b.dataset.day;
       $$('[data-day]').forEach((x) => x.classList.toggle('on', x === b));

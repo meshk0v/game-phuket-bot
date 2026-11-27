@@ -388,16 +388,14 @@ async function clubEvents(env) {
     const { games } = await gpGames(env);
     clubCache = { at: Date.now(), events: (games || []).filter((g) => g?.id && g.starts_at).map(clubEvent) };
   } catch (e) {
-    console.log('club api:', e.code, e.message);
-    return [];
+    console.log('club api:', e.code, e.message); // клуб недоступен — отдаём последний удачный список
   }
   return clubCache.events;
 }
-// Пока в админке клуба нет игр (или она недоступна), показываем прежнюю афишу из KV
+// Мероприятия берутся только из админки клуба (в KV остаются города и «О нас»)
 async function readAfisha(env) {
-  const state = await readState(env), club = await clubEvents(env);
-  if (!club.length) return state;
-  return { ...state, config: { ...state.config, events: [...club, ...state.config.events.filter((e) => e.city !== CLUB_CITY)] } };
+  const state = await readState(env);
+  return { ...state, config: { ...state.config, events: await clubEvents(env) } };
 }
 
 export default {
