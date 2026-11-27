@@ -544,7 +544,6 @@ const EventPage = {
       <div class="num">${String(e.date.getUTCDate()).padStart(2, '0')}</div>
       <span class="cap ${e.blue ? 'blue' : 'red'}">${WD_FULL[e.dow]}, ${fmtDate(e)} · ${e.time}</span>
       <h1 class="d">${esc(e.title)}</h1>
-      <p class="lead">${esc(e.desc)}</p>
     </section>
     <div class="facts">
       <div class="fact wide"><span>Где</span><b>${esc(e.place)}</b><div class="mute" style="font-size:13px;margin-top:2px">${esc(e.area)}</div>${e.map ? '<button class="maplink" data-map>Открыть на карте ›</button>' : ''}</div>
