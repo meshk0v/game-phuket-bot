@@ -12,7 +12,7 @@ const MON = ['января', 'февраля', 'марта', 'апреля', 'м
 
 /* ---------------- конфиг: города и афиша (редактируется в админке) ---------------- */
 const API = (window.GP_API || '').replace(/\/$/, '');
-let CFG = { cities: [], events: [] }, REV = 0, API_OK = false, IS_ADMIN = false;
+let CFG = { cities: [], events: [] }, API_OK = false;
 let MY = []; // мои записи: { e: id мероприятия, d: дата, k: 'paid' | 'manager', c: подтверждено }
 let EVENTS = [];
 const cityById = (id) => CFG.cities.find((c) => c.id === id);
@@ -27,17 +27,13 @@ async function getJSON(url, opts = {}, ms = 4000) {
 }
 async function loadConfig() {
   const r = await getJSON(API + '/api/config');
-  if (r.ok && r.j?.config?.cities) { CFG = r.j.config; REV = r.j.rev; API_OK = true; ls.set('gp_cfg', JSON.stringify(CFG)); }
+  if (r.ok && r.j?.config?.cities) { CFG = r.j.config; API_OK = true; ls.set('gp_cfg', JSON.stringify(CFG)); }
   else {
     try { CFG = JSON.parse(ls.get('gp_cfg')); } catch {}               // последняя удачная копия с сервера
     if (!CFG?.cities?.length) CFG = (await getJSON('default-config.json')).j || { cities: [], events: [] }; // встроенная афиша
   }
   if (inTG && API_OK) {
-    const [me, my] = await Promise.all([
-      getJSON(API + '/api/me', { method: 'POST', headers: { 'X-Init-Data': tg.initData } }),
-      getJSON(API + '/api/my', { headers: { 'X-Init-Data': tg.initData } }),
-    ]);
-    IS_ADMIN = !!me.j?.isAdmin;
+    const my = await getJSON(API + '/api/my', { headers: { 'X-Init-Data': tg.initData } });
     MY = my.j?.items || [];
   }
 }
@@ -320,7 +316,7 @@ function resetCity() { haptic(); city = ''; store.set(CITY_KEY, ''); go('city');
 let city = '';
 const home = () => { const c = cityById(city); return !c ? 'city' : c.status === 'active' ? 'afisha' : 'soon'; };
 const go = (r) => { if (location.hash.slice(1) === r) route(); else location.hash = r; };
-const TABS = ['afisha', 'games', 'order', 'club', 'admin'];
+const TABS = ['afisha', 'games', 'order', 'club'];
 const stack = []; let cur = null, goingBack = false;
 function back() {
   haptic();
@@ -331,11 +327,10 @@ function back() {
   go(p);
 }
 function route() {
-  const SCREENS = { city: City, soon: Soon, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, custom: Custom, pay: Pay, paydone: PayDone, ask: Ask, coop: Coop, admin: Admin, adminevent: AdminEvent };
+  const SCREENS = { city: City, soon: Soon, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, custom: Custom, pay: Pay, paydone: PayDone, ask: Ask, coop: Coop, };
   let full = location.hash.slice(1);
   // Telegram дописывает в адрес #tgWebAppData=… — это не экран; неизвестные адреса тоже ведём на стартовый
   if (!SCREENS[full.split('/')[0]]) full = home();
-  if (full.startsWith('admin') && !IS_ADMIN) full = home();
   const [r, ...rest] = full.split('/'); const arg = rest.join('/');
   const root = TABS.includes(r) || r === 'city' || (r === 'soon' && cityById(city)?.status === 'soon');
   if (root) stack.length = 0; // вкладки — корневые экраны
@@ -345,7 +340,6 @@ function route() {
   mainButton(null);
   EVENTS = buildEvents();
   reportCity();
-  $('#tab-admin').style.display = IS_ADMIN ? '' : 'none';
   const isTab = TABS.includes(r);
   document.body.classList.toggle('notabs', !isTab);
   $('#tabs').style.display = r === 'city' || r === 'soon' ? 'none' : '';
@@ -1060,184 +1054,6 @@ function formScreen(type, cap, title, red, lead, ph, ok) {
 }
 const Ask = formScreen('ask', 'Есть вопрос?', 'Напишите', 'нам', 'Про игры, запись или частное мероприятие — ответим лично.', 'Ваш вопрос', 'Менеджер ответит вам в ближайшее время.');
 const Coop = formScreen('coop', 'Для площадок и брендов', 'Давайте', 'дружить', 'Мы организуем и проводим развлекательные игры на острове и всегда открыты к взаимовыгодному сотрудничеству.', 'Как вы видите наше сотрудничество?', 'Менеджер свяжется с вами и договорится о встрече.');
-
-/* ---------------- админка (только для ADMIN_IDS) ---------------- */
-let admCity = '', admView = 'afisha';
-
-/* журнал: кто записался, кто подтвердил, вопросы и заявки */
-const LOG_KIND = {
-  reg: ['🎟', 'Запись'], ok: ['✅', 'Подтверждение'], ask: ['❓', 'Вопрос'], coop: ['🤝', 'Сотрудничество'],
-  order: ['🎉', 'Заказ игр'], custom: ['✨', 'Своё мероприятие'], new: ['👋', 'Новый пользователь'], city: ['📍', 'Выбрал город'], fail: ['⛔', 'Не доставлено менеджеру'],
-};
-const LOG_FILTERS = [['', 'Всё'], ['reg,ok', 'Записи'], ['ask,coop,order,custom', 'Заявки'], ['new,city', 'Новые'], ['fail', 'Ошибки']];
-const LOG = { city: '', types: '', items: [], cursor: null, loading: false, err: '' };
-const logTime = (x) => {
-  const d = new Date(x.t + (cityById(x.c)?.tz ?? 7) * 3600e3);
-  return `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)} · ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
-};
-function logItem(x) {
-  const [ic, lbl] = x.a === 'new' && !x.c ? ['👋', 'Запустил бота · город не выбран'] : x.a === 'reg' && x.k === 'manager' ? ['⚠️', 'Запись без оплаты'] : x.a === 'ok' && x.k === 'manager' ? ['✅', 'Обработано'] : LOG_KIND[x.a] || ['•', x.a];
-  const who = x.un ? '@' + x.un : x.n || x.u;
-  const det = [x.e, x.d, x.p ? x.p + ' чел.' : '', x.m, x.s].filter(Boolean).join(' · ');
-  return `<div class="lg lg-${esc(x.a)}">
-    <div class="lg-top"><span class="lg-k">${ic} ${esc(lbl)}</span><span class="lg-t">${logTime(x)}${!LOG.city && cityById(x.c) ? ' · ' + esc(cityById(x.c).name) : ''}</span></div>
-    ${x.u ? `<button class="lg-u" data-lu="${esc(x.un || '')}" data-uid="${esc(String(x.u))}">${esc(who)}${x.un && x.n ? ` <span>${esc(x.n)}</span>` : ''}</button>` : ''}
-    ${det ? `<div class="lg-d">${esc(det)}</div>` : ''}
-    ${x.b ? `<div class="lg-d">Подтвердил: <b>${esc(x.b)}</b></div>` : ''}
-    ${x.x ? `<div class="lg-x">${esc(x.x)}</div>` : ''}
-  </div>`;
-}
-function adminLogHtml() {
-  return `
-    <div class="chips-row"><button class="chip ${!LOG.city ? 'on' : ''}" data-lc="">Все города</button>${CFG.cities.map((c) => `<button class="chip ${c.id === LOG.city ? 'on' : ''}" data-lc="${esc(c.id)}">${esc(c.name)}</button>`).join('')}</div>
-    <div class="chips-row" style="margin-top:8px">${LOG_FILTERS.map(([v, t]) => `<button class="chip ${v === LOG.types ? 'on' : ''}" data-lt="${v}">${t}</button>`).join('')}</div>
-    <div id="log-wrap" style="margin-top:14px">${logBody()}</div>`;
-}
-const logMsg = (t) => `<p class="mute" style="padding:18px 2px">${t}</p>`;
-function logBody() {
-  return LOG.items.map(logItem).join('')
-    + (LOG.loading && !LOG.items.length ? logMsg('Загружаем…') : LOG.err ? logMsg(esc(LOG.err)) : !LOG.items.length ? logMsg('Событий пока нет.') : '')
-    + (LOG.cursor ? `<button class="btn ghost" id="log-more" ${LOG.loading ? 'disabled' : ''}>${LOG.loading ? 'Загружаем…' : 'Показать ещё'}</button>` : '');
-}
-// Обновляем только список — без перерисовки всей страницы
-function paintLog() {
-  const w = $('#log-wrap');
-  if (!w) return;
-  w.innerHTML = logBody();
-  $('#log-more')?.addEventListener('click', async () => { haptic(); if (await loadLog(true)) paintLog(); });
-  $$('[data-uid]', w).forEach((b) => b.addEventListener('click', () => { haptic(); openTgLink(b.dataset.lu ? 'https://t.me/' + b.dataset.lu : 'tg://user?id=' + b.dataset.uid); }));
-}
-let logSeq = 0;
-// Загрузка журнала. Первая страница — без промежуточного «Загружаем…»: экран перерисуется один раз, когда придут данные (как в афише)
-async function loadLog(more) {
-  if (more && LOG.loading) return false;
-  const seq = ++logSeq; // ответ на старый фильтр игнорируем
-  LOG.loading = true;
-  if (more) paintLog();
-  const q = new URLSearchParams({ city: LOG.city, types: LOG.types, ...(more && LOG.cursor ? { cursor: LOG.cursor } : {}) });
-  const r = await getJSON(API + '/api/admin/log?' + q, { headers: authHdr() }, 10000);
-  if (seq !== logSeq) return false;
-  LOG.loading = false; LOG.err = '';
-  if (r.ok) { if (!more) LOG.items = []; LOG.items.push(...(r.j.items || [])); LOG.cursor = r.j.cursor || null; LOG.loaded = true; }
-  else { LOG.err = r.status === 403 ? 'Нет доступа' : 'Не удалось загрузить журнал'; if (!more) { LOG.items = []; LOG.cursor = null; } }
-  return true;
-}
-const onLogScreen = () => cur === 'admin' && admView === 'log';
-async function reloadLog() { if ((await loadLog()) && onLogScreen()) route(); }
-function bindLog() {
-  const pick = (attr, key) => $$(`[${attr}]`).forEach((b) => b.addEventListener('click', () => {
-    if (LOG[key] === b.getAttribute(attr) && !LOG.err) return;
-    hapticSel(); LOG[key] = b.getAttribute(attr);
-    $$(`[${attr}]`).forEach((x) => x.classList.toggle('on', x === b)); // кнопка подсвечивается сразу, список — после загрузки
-    reloadLog();
-  }));
-  pick('data-lc', 'city'); pick('data-lt', 'types');
-  paintLog();
-  if (!LOG.loaded && !LOG.loading) reloadLog();
-}
-const confirmBox = (text, { title = 'Вы уверены?', ok = 'Удалить' } = {}) =>
-  modal({ icon: '!', title, text, buttons: [{ text: 'Отмена', kind: 'ghost', value: false }, { text: ok, value: true }], dismiss: false }).then((v) => v === true);
-const clone = (o) => JSON.parse(JSON.stringify(o));
-const newId = (p) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 4);
-const evWhen = (e) => (e.repeat === 'once'
-  ? `${Number(e.date.slice(8))} ${MON[Number(e.date.slice(5, 7)) - 1]}${e.date < new Date().toISOString().slice(0, 10) ? ' · прошло' : ''}`
-  : `Каждую неделю · ${WD[e.dow].toLowerCase()}`) + `, ${e.time}`;
-
-async function saveCfg(next) {
-  const r = await getJSON(API + '/api/admin/config', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Init-Data': tg?.initData || '' }, body: JSON.stringify({ config: next, rev: REV }) }, 8000);
-  if (r.ok) { CFG = r.j.config; REV = r.j.rev; ls.set('gp_cfg', JSON.stringify(CFG)); notify('success'); return true; }
-  notify('error');
-  if (r.status === 409 && r.j?.config) { CFG = r.j.config; REV = r.j.rev; toast('Данные обновились — повторите'); route(); }
-  else toast(r.status === 403 ? 'Нет доступа' : r.status === 0 ? 'Нет связи с сервером' : r.j?.error || 'Не удалось сохранить');
-  return false;
-}
-
-const Admin = {
-  html: () => {
-    if (!CFG.cities.some((c) => c.id === admCity)) admCity = CFG.cities[0]?.id || '';
-    const evs = CFG.events.filter((e) => e.city === admCity)
-      .sort((a, b) => (a.repeat === b.repeat ? (a.repeat === 'once' ? a.date.localeCompare(b.date) : ((a.dow + 6) % 7) - ((b.dow + 6) % 7)) : a.repeat === 'once' ? 1 : -1) || a.time.localeCompare(b.time));
-    return `
-    ${header('<span class="pill"><i></i>Админка</span>')}
-    <div class="seg" id="adm-view" style="margin-bottom:18px"><button data-v="afisha" class="${admView === 'afisha' ? 'on' : ''}">Афиша</button><button data-v="log" class="${admView === 'log' ? 'on' : ''}">Журнал</button></div>
-    ${admView === 'log' ? adminLogHtml() : `
-    <p class="cap">Управление</p>
-    <h1 class="d big" style="margin-top:8px">Афиша</h1>
-    ${CFG.cities.length ? `
-      <div class="chips-row">${CFG.cities.map((c) => `<button class="chip ${c.id === admCity ? 'on' : ''}" data-ac="${esc(c.id)}">${esc(c.name)}</button>`).join('')}</div>
-      <div style="margin-top:14px">${evs.length ? evs.map((e) => `
-        <button class="ev adm ${e.blue ? 'bl' : ''} ${e.active === false ? 'off' : ''}" data-go="adminevent/${esc(e.id)}">
-          <div class="day">${evWhen(e)}</div><div class="ttl">${esc(e.title)}</div>
-          <div class="meta">${esc(e.place)} · ${priceOf(e)}${e.active === false ? ' · <b>скрыто</b>' : ''}</div><span class="go">›</span>
-        </button>`).join('') : '<p class="mute" style="padding:18px 2px">В этом городе пока нет мероприятий.</p>'}</div>
-      <button class="btn" data-go="adminevent/new">+ Добавить мероприятие</button>` : '<p class="mute" style="padding:18px 2px">Городов пока нет.</p>'}
-    <p class="cap" style="margin-top:22px;line-height:1.6">${API_OK ? 'Изменения сразу видны всем пользователям.' : 'Нет связи с сервером — сохранить изменения нельзя.'}</p>`}`;
-  },
-  bind: () => {
-    $$('#adm-view button').forEach((b) => b.addEventListener('click', async () => {
-      if (b.dataset.v === admView) return;
-      hapticSel();
-      $$('#adm-view button').forEach((x) => x.classList.toggle('on', x === b));
-      if (b.dataset.v === 'log') { const ok = await loadLog(); if (!ok || cur !== 'admin' || !b.classList.contains('on')) return; }
-      admView = b.dataset.v; route();
-    }));
-    if (admView === 'log') return bindLog();
-    $$('[data-ac]').forEach((b) => b.addEventListener('click', () => { hapticSel(); admCity = b.dataset.ac; route(); }));
-  },
-};
-
-const AdminEvent = {
-  html: (id) => {
-    const e = id === 'new' ? { city: admCity, repeat: 'weekly', dow: 5, date: '', time: '19:00', type: 'Мафия', title: '', place: '', area: '', price: null, dur: 'до 5 часов, но можно сыграть любое комфортное количество игр', desc: '', blue: false, active: true } : CFG.events.find((x) => x.id === id);
-    if (!e) return '<div class="empty"><b class="d">Мероприятие не найдено</b></div>';
-    const dows = [1, 2, 3, 4, 5, 6, 0];
-    return `
-    <h1 class="d big">${id === 'new' ? 'Новое<br><span class="red">мероприятие</span>' : esc(e.title)}</h1>
-    <div class="field"><label>Город</label><select class="inp" id="e-city">${CFG.cities.map((c) => `<option value="${esc(c.id)}" ${c.id === e.city ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
-    <div class="field"><label>Когда</label>
-      <div class="seg" id="e-rep"><button data-v="weekly" class="${e.repeat === 'weekly' ? 'on' : ''}">Каждую неделю</button><button data-v="once" class="${e.repeat === 'once' ? 'on' : ''}">Один раз</button></div>
-      <select class="inp" id="e-dow" style="margin-top:8px">${dows.map((d) => `<option value="${d}" ${d === e.dow ? 'selected' : ''}>${WD_FULL[d]}</option>`).join('')}</select>
-      <input class="inp" type="date" id="e-date" value="${esc(e.date || '')}" style="margin-top:8px">
-      <input class="inp" type="time" id="e-time" value="${esc(e.time)}">
-    </div>
-    <div class="field"><label>Название</label><input class="inp" id="e-title" maxlength="80" placeholder="Мафия на Раваи" value="${esc(e.title)}">
-      <input class="inp" id="e-type" maxlength="40" placeholder="Формат: Мафия, Бункер, Квиз…" value="${esc(e.type)}"></div>
-    <div class="field"><label>Место</label><input class="inp" id="e-place" maxlength="100" placeholder="Название заведения" value="${esc(e.place)}">
-      <input class="inp" id="e-area" maxlength="80" placeholder="Район / город" value="${esc(e.area)}">
-      <input class="inp" id="e-map" maxlength="300" placeholder="Ссылка на карту (https://…)" value="${esc(e.map || '')}"></div>
-    <div class="field"><label>Стоимость, ฿</label><input class="inp" id="e-price" type="number" min="0" step="1" inputmode="numeric" placeholder="Пусто — «Уточняйте», 0 — «Бесплатно»" value="${e.price ?? ''}">
-      <input class="inp" id="e-dur" maxlength="120" placeholder="Длительность: до 5 часов" value="${esc(e.dur)}"></div>
-    <div class="field"><label>Описание</label><textarea class="inp" id="e-desc" maxlength="1000" placeholder="Пара предложений о мероприятии">${esc(e.desc)}</textarea></div>
-    <div class="field">
-      <label class="sw"><input type="checkbox" id="e-blue" ${e.blue ? 'checked' : ''}><i></i><span>Синий акцент <small>(для особых событий)</small></span></label>
-      <label class="sw"><input type="checkbox" id="e-active" ${e.active !== false ? 'checked' : ''}><i></i><span>Показывать в афише</span></label>
-    </div>
-    ${id !== 'new' ? '<button class="btn ghost danger" id="e-del">Удалить мероприятие</button>' : ''}`;
-  },
-  bind: (id) => {
-    let repeat = id === 'new' ? 'weekly' : CFG.events.find((x) => x.id === id)?.repeat;
-    const sync = () => { $('#e-dow').style.display = repeat === 'weekly' ? '' : 'none'; $('#e-date').style.display = repeat === 'once' ? '' : 'none'; };
-    sync();
-    $$('#e-rep button').forEach((b) => b.addEventListener('click', () => { hapticSel(); repeat = b.dataset.v; $$('#e-rep button').forEach((x) => x.classList.toggle('on', x === b)); sync(); }));
-    mainButton('Сохранить', async () => {
-      const v = (k) => $('#e-' + k).value.trim();
-      if (!v('title')) { notify('error'); return toast('Введите название'); }
-      if (!v('time')) { notify('error'); return toast('Укажите время'); }
-      if (repeat === 'once' && !v('date')) { notify('error'); return toast('Укажите дату'); }
-      const row = { id: id === 'new' ? newId('e') : id, city: v('city'), repeat, time: v('time'), type: v('type'), title: v('title'), place: v('place'), area: v('area'), map: v('map'),
-        price: v('price') === '' ? null : Math.max(0, Math.round(Number(v('price')))), dur: v('dur'), desc: v('desc'), blue: $('#e-blue').checked, active: $('#e-active').checked };
-      if (repeat === 'once') row.date = v('date'); else row.dow = Number(v('dow'));
-      const next = clone(CFG);
-      if (id === 'new') next.events.push(row); else next.events[next.events.findIndex((x) => x.id === id)] = row;
-      if (await saveCfg(next)) { admCity = row.city; toast('Сохранено'); back(); }
-    });
-    $('#e-del')?.addEventListener('click', async () => {
-      if (!(await confirmBox('Мероприятие исчезнет из афиши. Это действие нельзя отменить.', { title: 'Удалить мероприятие?' }))) return;
-      const next = clone(CFG); next.events = next.events.filter((x) => x.id !== id);
-      if (await saveCfg(next)) { toast('Удалено'); back(); }
-    });
-  },
-};
 
 const esc = (s = '') => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 function tgUser(k) {
