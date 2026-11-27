@@ -462,8 +462,8 @@ const Afisha = {
   html: () => {
     if (!EVENTS.length) return `${header(`<button class="pill" data-pick aria-label="Сменить город"><i></i>${esc(cityById(city).name)}<span class="chev">▾</span></button>`)}
       <div class="ahead"><h1 class="d">Афиша</h1></div>
-      <div class="empty"><b class="d">Пока пусто</b><p>В этом городе ещё нет запланированных игр. Загляните позже или напишите нам.</p>
-      <button class="btn ghost" data-go="ask">Задать вопрос</button></div>${galleryHtml()}`;
+      <div class="empty"><b class="d">Пока пусто</b><p>В этом городе ещё нет запланированных игр.</p>
+      </div>${galleryHtml()}`;
     const first = EVENTS[0], last = EVENTS[EVENTS.length - 1];
     const range = first.date.getUTCMonth() === last.date.getUTCMonth()
       ? `${first.date.getUTCDate()} – ${fmtDate(last)}` : `${fmtDate(first)} – ${fmtDate(last)}`;
