@@ -1013,7 +1013,7 @@ const Club = {
     const socials = [['tg', 'Чат в Telegram'], ['ig', 'Instagram'], ['wa', 'WhatsApp'], ['site', 'Сайт']].filter(([k]) => ab[k]);
     return `
   ${header()}
-  <h1 class="d big">Game<br><span class="red">Phuket</span></h1>
+  <h1 class="d big">Game<br><span class="red">Place</span></h1>
   ${ab.lead ? `<p class="lead" style="margin-top:12px">${esc(ab.lead)}</p>` : ''}
   ${stats.length ? `<div class="stats" style="grid-template-columns:repeat(${stats.length},1fr)">` : '<div hidden>'}${stats.map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join('')}</div>
   <div class="links">
