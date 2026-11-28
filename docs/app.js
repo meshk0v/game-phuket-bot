@@ -1089,6 +1089,7 @@ async function adminSave(gameId, body) {
   return g || true;
 }
 const gameName = (g) => g.title_ru || g.format?.name_ru || (g.kind === 'event' ? 'Мероприятие' : 'Игра');
+let admCity = 'phuket'; // в базе клуба пока нет городов: игры там только пхукетские
 const Admin = {
   html: () => {
     const list = [...(ADM.games || []), ...ADM.cancelled].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
@@ -1096,6 +1097,8 @@ const Admin = {
     ${header('<span class="pill"><i></i>Админка</span>')}
     <p class="cap">База клуба · ближайшие два месяца</p>
     <h1 class="d big" style="margin:8px 0 16px">Игры</h1>
+    <div class="seg" style="margin-bottom:14px">${CFG.cities.map((c) => `<button data-ac="${esc(c.id)}" class="${c.id === admCity ? 'on' : ''}">${esc(c.name)}</button>`).join('')}</div>
+    ${admCity !== 'phuket' ? '<div class="empty"><b class="d">Пока не работает</b><p>Игры на Бали нельзя добавить: в админке клуба ещё нет этого города.</p></div>' : `
     ${ADM.err ? `<p class="mute" style="padding:8px 0 14px">${esc(ADM.err)}</p>` : ''}
     ${!ADM.games ? (ADM.err ? '' : '<p class="mute" style="padding:18px 2px">Загружаем…</p>') : `
       ${list.length ? list.map((g) => `
@@ -1103,10 +1106,13 @@ const Admin = {
           <div class="day">${esc(g.weekday || '')}, ${esc(g.date || '')} · ${esc(g.time || '')}</div><div class="ttl">${esc(gameName(g))}</div>
           <div class="meta">${esc(g.place?.name || g.venue?.name_ru || '')} · ${Number(g.price_thb)} ฿ · идут: ${Number(g.going) || 0}${g.status === 'cancelled' ? ' · <b>отменена</b>' : ''}</div><span class="go">›</span>
         </button>`).join('') : '<p class="mute" style="padding:18px 2px">Игр пока нет.</p>'}
-      <button class="btn" data-go="adminevent/new">+ Добавить игру</button>`}
+      <button class="btn" data-go="adminevent/new">+ Добавить игру</button>`}`}
     <button class="btn ghost" style="margin-top:10px" data-go="admingal">Фото и видео</button>`;
   },
-  bind: () => { if (!ADM.loading && Date.now() - ADM.at > 30e3) loadAdmin(); },
+  bind: () => {
+    $$('[data-ac]').forEach((b) => b.addEventListener('click', () => { if (admCity === b.dataset.ac) return; hapticSel(); admCity = b.dataset.ac; route(); }));
+    if (!ADM.loading && Date.now() - ADM.at > 30e3) loadAdmin();
+  },
 };
 const gameForm = (g) => ({
   kind: g?.kind || 'game', date: g?.starts_at.slice(0, 10) || '', time: g?.starts_at.slice(11, 16) || '19:00',
