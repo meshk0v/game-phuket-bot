@@ -527,6 +527,8 @@ export default {
 
     try {
       if (req.method === 'GET' && url.pathname === '/api/config') {
+        // админ после своих правок должен видеть их сразу, а не через минуту кэша
+        if (url.searchParams.has('fresh') && (await isStaff(req, env))) clubCache.at = 0;
         const [afisha, gallery] = await Promise.all([readAfisha(env), readGallery(env)]);
         return send(200, { ...afisha, gallery });
       }

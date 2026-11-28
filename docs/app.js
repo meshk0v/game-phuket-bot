@@ -43,6 +43,23 @@ async function loadConfig() {
   }
 }
 
+// Афиша обновляется без перезапуска: при открытии вкладки, при возврате в приложение и раз в минуту
+let CFG_AT = Date.now();
+async function refreshConfig(force) {
+  if (!force && Date.now() - CFG_AT < 15e3) return;
+  CFG_AT = Date.now();
+  const r = await getJSON(API + '/api/config' + (IS_ADMIN ? '?fresh=1' : ''), IS_ADMIN ? { headers: authHdr() } : {}, 12000);
+  if (!r.ok || !r.j?.config?.cities) return;
+  const was = JSON.stringify([CFG, GAL]);
+  CFG = r.j.config; GAL = r.j.gallery || []; API_OK = true;
+  ls.set('gp_cfg', JSON.stringify(CFG)); ls.set('gp_gal', JSON.stringify(GAL));
+  // перерисовываем только если что-то изменилось и открыта афиша без окон поверх
+  if (cur === 'afisha' && !sheetClose && JSON.stringify([CFG, GAL]) !== was) { const y = scrollY; route(); scrollTo(0, y); }
+}
+const onAfisha = () => { if (cur === 'afisha' && document.visibilityState === 'visible') refreshConfig(); };
+document.addEventListener('visibilitychange', onAfisha);
+setInterval(onAfisha, 60e3);
+
 // Ближайшие даты мероприятий выбранного города. Время — по часовому поясу города.
 function buildEvents() {
   const tz = cityById(city)?.tz ?? 0, now = Date.now();
@@ -491,6 +508,7 @@ const Afisha = {
   },
   bind: () => {
     $('[data-pick]')?.addEventListener('click', () => { haptic(); openCitySheet(); });
+    refreshConfig();
     $$('[data-g]').forEach((b) => b.addEventListener('click', () => { haptic(); openGallery(+b.dataset.g); }));
     $$('[data-ga]').forEach((b) => b.addEventListener('click', () => { const g = $('.gal'); g.scrollBy({ left: +b.dataset.ga * g.clientWidth * 0.8, behavior: 'smooth' }); }));
     if (!EVENTS.length) return;
@@ -1085,7 +1103,7 @@ async function adminSave(gameId, body) {
     return null;
   }
   notify('success');
-  getJSON(API + '/api/config').then((c) => { if (c.ok && c.j?.config) { CFG = c.j.config; ls.set('gp_cfg', JSON.stringify(CFG)); } });
+  await refreshConfig(true); // чтобы афиша сразу показала правку
   return g || true;
 }
 const gameName = (g) => g.title_ru || g.format?.name_ru || (g.kind === 'event' ? 'Мероприятие' : 'Игра');
