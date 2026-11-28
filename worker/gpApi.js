@@ -1,4 +1,4 @@
-// Клиент API клуба GamePhuket (игры, записи, оплата, заявки). Пока подключён только список игр (афиша).
+// Клиент API клуба GamePhuket (игры, записи, оплата, заявки, управление афишей). Описание — BOT_API.md клуба.
 // Ключ — только в секрете GP_API_KEY; в браузер игрока он не попадает. Игрока клуб определяет по initData.
 
 export class GpApiError extends Error {
@@ -26,7 +26,9 @@ async function call(env, path, { method = 'GET', initData, body, idempotencyKey 
   }
   const data = await r.json().catch(() => null);
   if (!r.ok || !data) {
-    throw new GpApiError(r.ok ? 502 : r.status, data?.code || 'internal', data?.error || 'Ошибка базы клуба. Попробуйте позже', Number(r.headers.get('Retry-After')) || undefined);
+    const err = new GpApiError(r.ok ? 502 : r.status, data?.code || 'internal', data?.error || 'Ошибка базы клуба. Попробуйте позже', Number(r.headers.get('Retry-After')) || undefined);
+    err.game = data?.game; // при game_changed — как игра выглядит сейчас
+    throw err;
   }
   return data;
 }
@@ -44,6 +46,13 @@ export function gpGames(env, { from, to, initData } = {}) {
   if (to) q.set('to', to);
   return call(env, `/games${q.size ? `?${q}` : ''}`, { initData });
 }
+
+// Справочники для формы игры: форматы, заведения, ведущие, районы
+export const gpRefs = (env, initData) => call(env, '/refs', { initData });
+
+// Создать и изменить игру может только менеджер (проверяет клуб по initData)
+export const gpCreateGame = (env, initData, body) => call(env, '/games', { method: 'POST', initData, body });
+export const gpPatchGame = (env, initData, gameId, body) => call(env, `/games/${id(gameId)}`, { method: 'PATCH', initData, body });
 
 // Внимание: заводит нового игрока в базе клуба, если его там нет
 export const gpMe = (env, initData) => call(env, '/me', { initData });

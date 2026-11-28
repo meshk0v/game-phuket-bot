@@ -1,7 +1,7 @@
 // Cloudflare Worker: API для мини-аппа Game Phuket (города и афиша).
 // Хранилище — Workers KV (ключ "state"). Тот же API, что и в server.js.
 import DEFAULT_CFG from '../docs/default-config.json';
-import { gpEnabled, gpGames } from './gpApi.js';
+import { gpEnabled, gpGames, gpRefs, gpSignup, gpRequest, gpReceipt, gpCreateGame, gpPatchGame } from './gpApi.js';
 
 const enc = new TextEncoder();
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -166,6 +166,17 @@ const METHOD_NAME = { thb: 'Тайский счёт (PromptPay)', rub: 'Росс
 const GENDER_PRICE = { bali: { cur: 'IDR', m: 600000, f: 400000, rub: { m: 3000, f: 2500 }, usdt: { m: 37, f: 30 } } };
 const num = (x) => Number(x).toLocaleString('ru-RU');
 
+const initOf = (req) => req.headers.get('X-Init-Data') || '';
+// Ошибку клуба показываем как есть: текст у них по-русски и предназначен для игрока
+const gpFail = (send, e) => {
+  if (!e.code) throw e;
+  console.log('club api:', e.status, e.code, e.message);
+  return send(e.status >= 500 ? 502 : e.status || 502, { error: e.message, code: e.code, ...(e.game ? { game: e.game } : {}) });
+};
+// Ключ повтора: одно нажатие «Отправить» не выполняется дважды
+const idemKey = (user, v) => (/^[A-Za-z0-9-]{8,40}$/.test(String(v || '')) ? `${user.id}-${v}` : crypto.randomUUID());
+const PAY_API = { thb: 'thai_bank', rub: 'rub', usdt: 'usdt', manager: 'manager', free: 'cash' };
+
 async function register(req, env, send) {
   const user = await userOf(req, env);
   if (!user) return send(401, { error: 'Откройте приложение из Telegram' });
@@ -210,9 +221,14 @@ async function register(req, env, send) {
 
   const d = new Date(date + 'T00:00:00Z');
   const when = `${WD_FULL[d.getUTCDay()]}, ${d.getUTCDate()} ${MON[d.getUTCMonth()]}, ${ev.time}`;
-  const [yy, mo, dd] = date.split('-').map(Number), [hh, mi] = ev.time.split(':').map(Number);
-  const unix = Math.floor((Date.UTC(yy, mo - 1, dd, hh, mi) - (city?.tz ?? 0) * 3600e3) / 1000); // начало игры по времени города
   const comment = String(f.get('comment') || '').trim().slice(0, 300);
+
+  // запись в базу клуба — источник правды; без неё гостю не сообщаем, что он записан
+  let saved;
+  try {
+    const receipt = hasFile && method !== 'manager' ? await gpReceipt(file) : undefined;
+    saved = await gpSignup(env, initOf(req), ev.id.slice(2), { seats: n, payMethod: PAY_API[method], receipt }, idemKey(user, f.get('idem')));
+  } catch (e) { return gpFail(send, e); }
   const head = method === 'manager' ? '⚠️ <b>Нет возможности оплатить</b> — свяжитесь с клиентом' : method === 'free' ? '🎟 <b>Новая запись</b> · бесплатно' : '🧾 <b>Новая запись + чек</b>';
   const text = [
     head, '',
@@ -223,22 +239,18 @@ async function register(req, env, send) {
     ...(comment ? ['', quote(comment)] : []),
   ].join('\n');
 
-  // запись о заявке — для кнопки «Обработано» (хранится 60 дней)
   const rid = crypto.randomUUID().slice(0, 8), kind = method === 'manager' ? 'manager' : 'paid';
   const chatUrl = city?.about?.tg || '';
-  await env.CONFIG.put('reg:' + rid, JSON.stringify({ uid: user.id, uname: user.username || '', html: text, file: !!hasFile, kind, title: ev.title, when, place: ev.place, chat: chatUrl, city: ev.city, name: fullName(user), n }), { expirationTtl: 60 * 86400 });
-  // оплату отдельно не подтверждают: присланный чек и есть подтверждение. Кнопка нужна только для заявки без оплаты
+  // для кнопки «Обработано» у заявки без оплаты (хранится 60 дней)
+  if (kind === 'manager') await env.CONFIG.put('reg:' + rid, JSON.stringify({ uid: user.id, uname: user.username || '', html: text, file: false, kind, title: ev.title, when, place: ev.place, chat: chatUrl, city: ev.city, name: fullName(user), n }), { expirationTtl: 60 * 86400 });
+  // оплату отдельно не подтверждают: присланный чек и есть подтверждение
   const markup = { inline_keyboard: [...(kind === 'manager' ? [[{ text: '✅ Обработано', callback_data: 'ok:' + rid, style: 'success' }]] : []), profileRow(user)] };
 
   const logBase = { ...userLog(user), c: ev.city, e: ev.title, d: when, p: n, m: METHOD_NAME[method], s: amount, k: kind, r: rid };
-  const delivered = await deliver(env, ev.city, text, hasFile ? file : null, markup, logBase);
-  if (!delivered) return send(502, { error: 'Не удалось отправить заявку менеджеру. Попробуйте позже.' });
+  // запись уже в базе клуба: если сообщение менеджеру не дошло, гостю всё равно отвечаем успехом (в журнале будет «не доставлено»)
+  await deliver(env, ev.city, `${text}\n\n🗂 Запись в базе клуба №${saved.signup_id}`, hasFile ? file : null, markup, logBase);
   await rate.bump();
   await logAdd(env, { ...logBase, a: 'reg', x: comment });
-  // мои записи — чтобы приложение показывало «Вы записаны» вместо кнопки
-  const myKey = `my:${user.id}`, mine = ((await env.CONFIG.get(myKey, 'json')) || []).filter((x) => !(x.e === ev.id && x.d === date));
-  mine.push({ e: ev.id, d: date, k: kind, r: rid });
-  await env.CONFIG.put(myKey, JSON.stringify(mine.slice(-30)), { expirationTtl: 120 * 86400 });
 
   // подтверждение клиенту в чат с ботом (если не получится — не страшно)
   const ack = method === 'manager'
@@ -248,6 +260,7 @@ async function register(req, env, send) {
   return send(200, { ok: true, kind: method === 'manager' ? 'manager' : 'paid' });
 }
 
+const REQ_KIND = { ask: 'question', coop: 'partnership', order: 'order', custom: 'event' };
 async function request(req, env, send) {
   const user = await userOf(req, env);
   if (!user) return send(401, { error: 'Откройте приложение из Telegram' });
@@ -301,7 +314,21 @@ async function request(req, env, send) {
   const cityName = st.config.cities.find((c) => c.id === cityId)?.name;
   const logBase = { ...userLog(user), c: cityId, e: evTitle, x: [type === 'order' ? (b.formats || []).join(', ') : '', message, contact !== user.username && contact !== '@' + user.username ? contact : ''].filter(Boolean).join(' · ') };
   const full = cityName ? text.replace('\n', ` · ${h(cityName)}\n`) : text;
-  if (!(await deliver(env, cityId, full, null, { inline_keyboard: [profileRow(user)] }, { ...logBase, k: type }))) return send(502, { error: 'Не удалось отправить. Попробуйте позже.' });
+  const guestsN = Math.round(Number(b.guests));
+  const plain = [
+    cityName ? `Город: ${cityName}` : '',
+    name ? `Имя: ${name}` : '',
+    evTitle ? `Игра: ${evTitle}${b.date ? `, ${b.date}` : ''}` : '',
+    (type === 'order' || type === 'custom') && /^\d{4}-\d{2}-\d{2}$/.test(b.date || '') ? `Дата: ${b.date}` : '',
+    (type === 'order' || type === 'custom') && guestsN >= 1 && guestsN <= 1000 ? `Гостей: ${guestsN}` : '',
+    type === 'order' ? `Игры: ${(Array.isArray(b.formats) ? b.formats : []).map((x) => t(x, 30)).filter(Boolean).slice(0, 10).join(', ')}` : '',
+    type === 'order' ? `Язык игры: ${b.lang === 'EN' ? 'English' : 'Русский'}` : '',
+    message,
+  ].filter(Boolean).join('\n');
+  try {
+    await gpRequest(env, initOf(req), { kind: REQ_KIND[type], text: plain, contact, lang: type === 'order' && b.lang === 'EN' ? 'en' : 'ru' }, idemKey(user, b.idem));
+  } catch (e) { return gpFail(send, e); }
+  await deliver(env, cityId, full, null, { inline_keyboard: [profileRow(user)] }, { ...logBase, k: type });
   await rate.bump();
   await logAdd(env, { ...logBase, a: type });
   const ack = { ask: '📨 Вопрос получен. Ответим в ближайшее время.', coop: '📨 Предложение получено. Менеджер свяжется с вами.', order: '📨 Заявка на мероприятие получена. Менеджер свяжется с вами в ближайшее время.', custom: '📨 Заявка на ваше мероприятие получена. Менеджер свяжется с вами в ближайшее время.' }[type];
@@ -330,8 +357,6 @@ async function onCallback(env, q) {
   const by = fullName(q.from), now = Date.now(), unix = Math.floor(now / 1000), bk = new Date(now + 7 * 3600e3);
   rec.by = by;
   await env.CONFIG.put('reg:' + id, JSON.stringify(rec), { expirationTtl: 60 * 86400 });
-  const myKey = `my:${rec.uid}`, mine = (await env.CONFIG.get(myKey, 'json')) || [];
-  if (mine.some((x) => x.r === id)) await env.CONFIG.put(myKey, JSON.stringify(mine.map((x) => (x.r === id ? { ...x, c: 1 } : x))), { expirationTtl: 120 * 86400 });
   const line = `${rec.kind === 'manager' ? '✅ <b>Обработано</b>' : '✅ <b>Подтверждено</b>'} · ${h(by)} · ${pad2(bk.getUTCDate())}.${pad2(bk.getUTCMonth() + 1)} ${pad2(bk.getUTCHours())}:${pad2(bk.getUTCMinutes())}`;
   const body = { chat_id: q.message.chat.id, message_id: q.message.message_id, parse_mode: 'HTML', reply_markup: { inline_keyboard: [profileRow({ id: rec.uid, username: rec.uname })] } };
   await tgJson(env, rec.file ? 'editMessageCaption' : 'editMessageText', { ...body, ...(rec.file ? { caption: `${rec.html}\n\n${line}` } : { text: `${rec.html}\n\n${line}` }) });
@@ -374,13 +399,17 @@ const readState = async (env) => (await env.CONFIG.get('state', 'json')) || { re
 
 /* ---------- Афиша из админки клуба ---------- */
 const CLUB_CITY = 'phuket'; // в API клуба нет городов: все игры — пхукетские, остальные города берутся из KV
-const clubEvent = (g) => ({
-  id: 'gp' + g.id, city: CLUB_CITY, repeat: 'once', date: g.starts_at.slice(0, 10), time: g.starts_at.slice(11, 16),
-  type: g.format?.name_ru || 'Игра', title: g.format?.name_ru || 'Игра',
-  place: g.venue?.name_ru || 'Место уточняется', area: g.district?.name || '',
-  map: /^https:\/\//.test(g.venue?.maps_url || '') ? g.venue.maps_url : '',
-  price: Number.isFinite(g.price_thb) ? g.price_thb : null, dur: '', desc: '', blue: false, active: true,
-});
+const clubEvent = (g) => {
+  const title = g.title_ru || g.format?.name_ru || (g.kind === 'event' ? 'Мероприятие' : 'Игра');
+  const place = g.place || (g.venue ? { name: g.venue.name_ru, maps_url: g.venue.maps_url } : null);
+  return {
+    id: 'gp' + g.id, city: CLUB_CITY, repeat: 'once', date: g.starts_at.slice(0, 10), time: g.starts_at.slice(11, 16),
+    type: g.kind === 'event' ? title : g.format?.name_ru || title, title,
+    place: place?.name || 'Место уточняется', area: g.district?.name || '',
+    map: /^https:\/\//.test(place?.maps_url || '') ? place.maps_url : '',
+    price: Number.isFinite(g.price_thb) ? g.price_thb : null, dur: '', desc: '', blue: g.kind === 'event', active: true,
+  };
+};
 let clubCache = { at: 0, events: [] }; // клуб разрешает кэшировать список игр не дольше 60 секунд
 async function clubEvents(env) {
   if (!gpEnabled(env)) return [];
@@ -399,20 +428,47 @@ async function readAfisha(env) {
   return { ...state, config: { ...state.config, events: await clubEvents(env) } };
 }
 
+// Вкладка «Админ»: наши админы и менеджеры городов. Права на изменение всё равно проверяет клуб («Настройки → Бот»)
+async function isStaff(req, env) {
+  const u = await userOf(req, env);
+  return !!u && [...allManagerIds(env), ...String(env.ADMIN_IDS || '').split(',').map((x) => x.trim())].includes(String(u.id));
+}
+const GAME_FIELDS = ['kind', 'status', 'expect_updated_at', 'date', 'time', 'gather_time', 'game_type_id', 'venue_id', 'host_id', 'price_thb', 'title_ru', 'description_ru', 'place_name', 'place_address', 'place_maps_url'];
+async function adminGames(req, env, url, send) {
+  if (!(await isStaff(req, env))) return send(403, { error: 'Нет доступа' });
+  const initData = initOf(req), gameId = url.pathname.split('/')[4];
+  try {
+    if (req.method === 'GET' && !gameId) {
+      const day = (shift) => new Date(Date.now() + 7 * 3600e3 + shift * 86400e3).toISOString().slice(0, 10); // даты — по Пхукету
+      const [list, refs] = await Promise.all([gpGames(env, { from: day(0), to: day(61), initData }), gpRefs(env, initData)]);
+      return send(200, { games: list.games || [], refs });
+    }
+    if ((req.method === 'POST' && !gameId) || (req.method === 'PATCH' && gameId)) {
+      const raw = await req.text();
+      if (raw.length > 20000) return send(413, { error: 'Слишком большой запрос' });
+      const b = JSON.parse(raw || '{}'), body = Object.fromEntries(GAME_FIELDS.filter((k) => b[k] !== undefined).map((k) => [k, b[k]]));
+      const res = gameId ? await gpPatchGame(env, initData, gameId, body) : await gpCreateGame(env, initData, body);
+      clubCache.at = 0; // афиша обновится при следующем открытии
+      return send(200, res);
+    }
+    return send(404, { error: 'Not found' });
+  } catch (e) { return gpFail(send, e); }
+}
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
     const origin = req.headers.get('Origin');
     const allowed = new Set(['https://meshk0v.github.io', ...(env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean)]);
     const cors = origin && allowed.has(origin)
-      ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin', 'Access-Control-Allow-Headers': 'Content-Type, X-Init-Data', 'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS' }
+      ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin', 'Access-Control-Allow-Headers': 'Content-Type, X-Init-Data', 'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, OPTIONS' }
       : {};
     const send = (code, obj) => new Response(JSON.stringify(obj), { status: code, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...cors } });
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
     try {
       if (req.method === 'GET' && url.pathname === '/api/config') return send(200, await readAfisha(env));
-      if (req.method === 'POST' && url.pathname === '/api/me') return send(200, { isAdmin: await isAdmin(req, env) });
+      if (req.method === 'POST' && url.pathname === '/api/me') return send(200, { isAdmin: await isStaff(req, env) });
       if (req.method === 'POST' && url.pathname === '/api/tg') {
         if (!env.TG_WEBHOOK_SECRET || req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== env.TG_WEBHOOK_SECRET) return new Response('forbidden', { status: 403 });
         try { await onUpdate(env, await req.json()); } catch { /* Telegram не должен получать ошибку и слать повторы */ }
@@ -423,8 +479,11 @@ export default {
       if (req.method === 'GET' && url.pathname === '/api/my') {
         const u = await userOf(req, env);
         if (!u) return send(401, { error: 'Откройте приложение из Telegram' });
-        const today = new Date(Date.now() - 86400e3).toISOString().slice(0, 10);
-        return send(200, { items: ((await env.CONFIG.get(`my:${u.id}`, 'json')) || []).filter((x) => x.d >= today).map(({ e, d, k, c }) => ({ e, d, k, c: !!c })) });
+        // мои записи — из базы клуба (в том числе сделанные на сайте, в опросе или админом)
+        try {
+          const { games } = await gpGames(env, { initData: initOf(req) });
+          return send(200, { items: (games || []).filter((x) => x.my_signup).map((x) => ({ e: 'gp' + x.id, d: x.starts_at.slice(0, 10), k: x.my_signup.pay_method === 'manager' ? 'manager' : 'paid', c: !!x.my_signup.paid_confirmed })) });
+        } catch (e) { return gpFail(send, e); }
       }
       if (req.method === 'GET' && url.pathname === '/api/payments') {
         if (!(await userOf(req, env))) return send(401, { error: 'Откройте приложение из Telegram' });
@@ -469,6 +528,7 @@ export default {
         await env.CONFIG.put('state', JSON.stringify(next));
         return send(200, next);
       }
+      if (url.pathname === '/api/admin/games' || /^\/api\/admin\/games\/\d+$/.test(url.pathname)) return await adminGames(req, env, url, send);
       return send(404, { error: 'Not found' });
     } catch (e) { return send(400, { error: e.message || 'Bad request' }); }
   },

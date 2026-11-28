@@ -12,7 +12,7 @@ const MON = ['января', 'февраля', 'марта', 'апреля', 'м
 
 /* ---------------- конфиг: города и афиша (редактируется в админке) ---------------- */
 const API = (window.GP_API || '').replace(/\/$/, '');
-let CFG = { cities: [], events: [] }, API_OK = false;
+let CFG = { cities: [], events: [] }, API_OK = false, IS_ADMIN = false;
 let MY = []; // мои записи: { e: id мероприятия, d: дата, k: 'paid' | 'manager', c: подтверждено }
 let EVENTS = [];
 const cityById = (id) => CFG.cities.find((c) => c.id === id);
@@ -33,7 +33,11 @@ async function loadConfig() {
     if (!CFG?.cities?.length) CFG = (await getJSON('default-config.json')).j || { cities: [], events: [] }; // встроенная афиша
   }
   if (inTG && API_OK) {
-    const my = await getJSON(API + '/api/my', { headers: { 'X-Init-Data': tg.initData } });
+    const [me, my] = await Promise.all([
+      getJSON(API + '/api/me', { method: 'POST', headers: { 'X-Init-Data': tg.initData } }),
+      getJSON(API + '/api/my', { headers: { 'X-Init-Data': tg.initData } }, 12000),
+    ]);
+    IS_ADMIN = !!me.j?.isAdmin;
     MY = my.j?.items || [];
   }
 }
@@ -316,7 +320,7 @@ function resetCity() { haptic(); city = ''; store.set(CITY_KEY, ''); go('city');
 let city = '';
 const home = () => { const c = cityById(city); return !c ? 'city' : c.status === 'active' ? 'afisha' : 'soon'; };
 const go = (r) => { if (location.hash.slice(1) === r) route(); else location.hash = r; };
-const TABS = ['afisha', 'games', 'order', 'club'];
+const TABS = ['afisha', 'games', 'order', 'club', 'admin'];
 const stack = []; let cur = null, goingBack = false;
 function back() {
   haptic();
@@ -327,10 +331,11 @@ function back() {
   go(p);
 }
 function route() {
-  const SCREENS = { city: City, soon: Soon, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, custom: Custom, pay: Pay, paydone: PayDone, ask: Ask, coop: Coop, };
+  const SCREENS = { city: City, soon: Soon, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, custom: Custom, pay: Pay, paydone: PayDone, ask: Ask, coop: Coop, admin: Admin, adminevent: AdminEvent };
   let full = location.hash.slice(1);
   // Telegram дописывает в адрес #tgWebAppData=… — это не экран; неизвестные адреса тоже ведём на стартовый
-  if (!SCREENS[full.split('/')[0]]) full = home();
+  if (!SCREENS[full.split('/')[0]] || (full.startsWith('admin') && !IS_ADMIN)) full = home();
+  $('#tab-admin').style.display = IS_ADMIN ? '' : 'none';
   const [r, ...rest] = full.split('/'); const arg = rest.join('/');
   const root = TABS.includes(r) || r === 'city' || (r === 'soon' && cityById(city)?.status === 'soon');
   if (root) stack.length = 0; // вкладки — корневые экраны
@@ -624,6 +629,9 @@ async function prepReceipt(file) {
   } catch { return asIs(); } // не смогли сжать — отправляем как есть, если подходит по формату и размеру
 }
 
+// Один и тот же ключ при повторном нажатии с теми же данными — база клуба не выполнит действие дважды
+const IDEM = {};
+const idemFor = (sig) => IDEM[sig] || (IDEM[sig] = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 12));
 async function sendRegistration(e, n, method, comment = '') {
   if (sending) return;
   if (!API_OK || !inTG) { notify('error'); return toast('Запись работает только в Telegram'); }
@@ -633,6 +641,8 @@ async function sendRegistration(e, n, method, comment = '') {
   fd.append('eventId', e.id); fd.append('date', isoDay(e)); fd.append('count', String(n)); fd.append('method', method);
   if (gpOf(e) && reg?.m !== undefined) { fd.append('men', String(reg.m)); fd.append('women', String(reg.f)); }
   if (comment) fd.append('comment', comment);
+  const sig = [e.id, n, method, reg?.m, reg?.f, receipt?.size].join('|');
+  fd.append('idem', idemFor(sig));
   if (receipt && method !== 'manager' && method !== 'free') fd.append('receipt', receipt, receipt.name || 'receipt');
   tg?.MainButton.showProgress?.(); const fb = $('#fbtn'); if (fb) { fb.disabled = true; fb.textContent = 'Отправляем…'; }
   let r;
@@ -643,7 +653,7 @@ async function sendRegistration(e, n, method, comment = '') {
   sending = false;
   tg?.MainButton.hideProgress?.(); if (fb) { fb.disabled = false; fb.textContent = fb.dataset.t || 'Отправить'; }
   if (!r.ok) { notify('error'); return toast(r.j?.error || 'Не удалось отправить. Проверьте интернет и повторите'); }
-  notify('success'); receipt = null;
+  notify('success'); receipt = null; delete IDEM[sig];
   MY = MY.filter((x) => !(x.e === e.id && x.d === isoDay(e))).concat({ e: e.id, d: isoDay(e), k: r.j.kind === 'manager' ? 'manager' : 'paid', c: false });
   go(`paydone/${e.id}/${r.j.kind}`);
 }
@@ -654,10 +664,12 @@ async function sendRequest(type, data, title, okMsg, after) {
   if (!API_OK || !inTG) { notify('error'); return toast('Отправка работает только в Telegram'); }
   sending = true;
   tg?.MainButton.showProgress?.(); const fb = $('#fbtn'); if (fb) { fb.disabled = true; fb.textContent = 'Отправляем…'; }
-  const r = await getJSON(API + '/api/request', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() }, body: JSON.stringify({ type, city, ...data }) }, 12000);
+  const sig = JSON.stringify([type, city, data]);
+  const r = await getJSON(API + '/api/request', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() }, body: JSON.stringify({ type, city, ...data, idem: idemFor(sig) }) }, 30000);
   sending = false;
   tg?.MainButton.hideProgress?.(); if (fb) { fb.disabled = false; fb.textContent = fb.dataset.t || 'Отправить'; }
   if (!r.ok) { notify('error'); return toast(r.j?.error || 'Не удалось отправить. Проверьте интернет и повторите'); }
+  delete IDEM[sig];
   done(title, okMsg, after);
 }
 
@@ -1049,6 +1061,127 @@ function formScreen(type, cap, title, red, lead, ph, ok) {
 }
 const Ask = formScreen('ask', 'Есть вопрос?', 'Напишите', 'нам', 'Про игры, запись или частное мероприятие — ответим лично.', 'Ваш вопрос', 'Менеджер ответит вам в ближайшее время.');
 const Coop = formScreen('coop', 'Для площадок и брендов', 'Давайте', 'дружить', 'Мы организуем и проводим развлекательные игры на острове и всегда открыты к взаимовыгодному сотрудничеству.', 'Как вы видите наше сотрудничество?', 'Менеджер свяжется с вами и договорится о встрече.');
+
+/* ---------------- админка: игры в базе клуба ---------------- */
+const ADM = { games: null, refs: null, err: '', at: 0, loading: false, cancelled: [] };
+async function loadAdmin() {
+  if (ADM.loading) return;
+  ADM.loading = true;
+  const r = await getJSON(API + '/api/admin/games', { headers: authHdr() }, 20000);
+  ADM.loading = false; ADM.at = Date.now();
+  if (r.ok) { ADM.games = r.j.games; ADM.refs = r.j.refs; ADM.err = ''; }
+  else ADM.err = r.j?.error || 'Не удалось загрузить игры из админки клуба';
+  if (cur && cur.startsWith('admin')) route();
+}
+async function adminSave(gameId, body) {
+  if (sending) return null;
+  sending = true; tg?.MainButton.showProgress?.();
+  const r = await getJSON(API + '/api/admin/games' + (gameId ? '/' + gameId : ''), { method: gameId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() }, body: JSON.stringify(body) }, 30000);
+  sending = false; tg?.MainButton.hideProgress?.();
+  const g = r.j?.game;
+  if (g) { // свежая версия игры (и после успеха, и при «игру уже изменили»)
+    ADM.games = (ADM.games || []).filter((x) => x.id !== g.id);
+    ADM.cancelled = ADM.cancelled.filter((x) => x.id !== g.id);
+    (g.status === 'cancelled' ? ADM.cancelled : ADM.games).push(g);
+  }
+  if (!r.ok) {
+    notify('error');
+    toast(r.status === 0 ? 'Нет связи с сервером. Проверьте в списке, сохранилось ли' : r.j?.error || 'Не удалось сохранить');
+    if (r.j?.code === 'game_changed') route();
+    return null;
+  }
+  notify('success');
+  getJSON(API + '/api/config').then((c) => { if (c.ok && c.j?.config) { CFG = c.j.config; ls.set('gp_cfg', JSON.stringify(CFG)); } });
+  return g || true;
+}
+const gameName = (g) => g.title_ru || g.format?.name_ru || (g.kind === 'event' ? 'Мероприятие' : 'Игра');
+const Admin = {
+  html: () => {
+    const list = [...(ADM.games || []), ...ADM.cancelled].sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+    return `
+    ${header('<span class="pill"><i></i>Админка</span>')}
+    <p class="cap">База клуба · ближайшие два месяца</p>
+    <h1 class="d big" style="margin:8px 0 16px">Игры</h1>
+    ${ADM.err ? `<p class="mute" style="padding:8px 0 14px">${esc(ADM.err)}</p>` : ''}
+    ${!ADM.games ? (ADM.err ? '' : '<p class="mute" style="padding:18px 2px">Загружаем…</p>') : `
+      ${list.length ? list.map((g) => `
+        <button class="ev ${g.kind === 'event' ? 'bl' : ''} ${g.status === 'cancelled' ? 'off' : ''}" data-go="adminevent/${Number(g.id)}">
+          <div class="day">${esc(g.weekday || '')}, ${esc(g.date || '')} · ${esc(g.time || '')}</div><div class="ttl">${esc(gameName(g))}</div>
+          <div class="meta">${esc(g.place?.name || g.venue?.name_ru || '')} · ${Number(g.price_thb)} ฿ · идут: ${Number(g.going) || 0}${g.status === 'cancelled' ? ' · <b>отменена</b>' : ''}</div><span class="go">›</span>
+        </button>`).join('') : '<p class="mute" style="padding:18px 2px">Игр пока нет.</p>'}
+      <button class="btn" data-go="adminevent/new">+ Добавить игру</button>`}`;
+  },
+  bind: () => { if (!ADM.loading && Date.now() - ADM.at > 30e3) loadAdmin(); },
+};
+const gameForm = (g) => ({
+  kind: g?.kind || 'game', date: g?.starts_at.slice(0, 10) || '', time: g?.starts_at.slice(11, 16) || '19:00',
+  gather_time: g ? g.gather_at?.slice(11, 16) || '' : '18:30', game_type_id: String(g?.format?.id || ''), venue_id: String(g?.venue?.id || ''),
+  host_id: String(g?.host?.id || ''), price_thb: String(g?.price_thb ?? 600), title_ru: g?.title_ru || '',
+  place_name: g && !g.venue ? g.place?.name || '' : '', place_address: g && !g.venue ? g.place?.address || '' : '', place_maps_url: g && !g.venue ? g.place?.maps_url || '' : '',
+});
+let admKind = 'game';
+const AdminEvent = {
+  html: (id) => {
+    if (!ADM.refs) return `<p class="mute" style="padding:30px 0">${esc(ADM.err || 'Загружаем…')}</p>`;
+    const g = id === 'new' ? null : [...(ADM.games || []), ...ADM.cancelled].find((x) => String(x.id) === id);
+    if (id !== 'new' && !g) return '<div class="empty"><b class="d">Игра не найдена</b></div>';
+    const v = gameForm(g); admKind = v.kind;
+    const opts = (list, sel, empty, name = (x) => x.name_ru || x.name) => `${empty === null ? '' : `<option value="">${empty}</option>`}${(list || []).map((x) => `<option value="${Number(x.id)}" ${String(x.id) === sel ? 'selected' : ''}>${esc(name(x))}</option>`).join('')}`;
+    const inp = (k, ph, type = 'text', max = 200) => `<input class="inp" id="g-${k}" type="${type}" maxlength="${max}" placeholder="${ph}" value="${esc(v[k])}">`;
+    return `
+    <h1 class="d big">${g ? esc(gameName(g)) : 'Новая<br><span class="red">игра</span>'}</h1>
+    ${g ? '' : '<div class="field"><div class="seg" id="g-kind"><button data-v="game" class="on">Игра клуба</button><button data-v="event">Мероприятие</button></div></div>'}
+    <div class="field" data-only="event"><label>Название</label>${inp('title_ru', 'Например: Вечер настолок', 'text', 120)}</div>
+    <div class="field"><label>Дата и начало (время Пхукета)</label>${inp('date', '', 'date')}${inp('time', '', 'time')}</div>
+    <div class="field"><label>Время сбора</label>${inp('gather_time', '', 'time')}</div>
+    <div class="field"><label>Формат</label><select class="inp" id="g-game_type_id">${opts(ADM.refs.formats, v.game_type_id, 'Не выбран')}</select></div>
+    <div class="field"><label>Место</label><select class="inp" id="g-venue_id">${opts(ADM.refs.venues, v.venue_id, 'Не выбрано')}</select></div>
+    <div class="field" data-own>${inp('place_name', 'Своё место: название')}${inp('place_address', 'Адрес', 'text', 300)}${inp('place_maps_url', 'Ссылка на карту (https://…)', 'url', 300)}</div>
+    <div class="field"><label>Ведущий</label><select class="inp" id="g-host_id">${opts(ADM.refs.hosts, v.host_id, 'Не указан')}</select></div>
+    <div class="field"><label>Цена за место, ฿</label><input class="inp" id="g-price_thb" type="number" min="0" step="1" inputmode="numeric" value="${esc(v.price_thb)}"></div>
+    ${!g ? '' : g.status === 'cancelled' ? '<button class="btn ghost" style="margin-top:26px" id="g-restore">Вернуть игру</button>' : '<button class="btn ghost danger" id="g-cancel">Отменить игру</button>'}`;
+  },
+  bind: (id) => {
+    if (!ADM.refs) { if (!ADM.loading) loadAdmin(); return; }
+    const g = id === 'new' ? null : [...(ADM.games || []), ...ADM.cancelled].find((x) => String(x.id) === id);
+    if (id !== 'new' && !g) return;
+    const before = gameForm(g);
+    const val = (k) => $('#g-' + k).value.trim();
+    const sync = () => {
+      $$('[data-only="event"]').forEach((x) => (x.style.display = admKind === 'event' ? '' : 'none'));
+      $('[data-own]').style.display = admKind === 'event' && !val('venue_id') ? '' : 'none';
+      $('#g-venue_id').options[0].textContent = admKind === 'event' ? 'Своё место' : 'Не выбрано';
+    };
+    sync();
+    $('#g-venue_id').addEventListener('change', sync);
+    $$('#g-kind button').forEach((b) => b.addEventListener('click', () => { hapticSel(); admKind = b.dataset.v; $$('#g-kind button').forEach((x) => x.classList.toggle('on', x === b)); sync(); }));
+    const fail = (m) => { notify('error'); toast(m); };
+    mainButton('Сохранить', async () => {
+      const own = admKind === 'event' && !val('venue_id'), price = Number(val('price_thb'));
+      if (!val('date') || !val('time')) return fail('Укажите дату и время начала');
+      if (val('price_thb') === '' || !Number.isInteger(price) || price < 0) return fail('Цена — целое число, 0 или больше');
+      if (admKind === 'game' && (!val('gather_time') || !val('game_type_id') || !val('venue_id'))) return fail('Укажите время сбора, формат и место');
+      if (admKind === 'event' && !val('title_ru')) return fail('Введите название');
+      if (own && !val('place_name')) return fail('Выберите место или введите своё');
+      const keys = ['date', 'time', 'gather_time', 'game_type_id', 'venue_id', 'host_id', 'price_thb',
+        ...(admKind === 'event' ? ['title_ru'] : []), ...(own ? ['place_name', 'place_address', 'place_maps_url'] : [])];
+      const cast = (k, x) => (x === '' ? null : /_id$|price_thb/.test(k) ? Number(x) : x);
+      // новая игра — все заполненные поля; правка — только изменённые
+      const changed = keys.filter((k) => (g ? val(k) !== before[k] : val(k) !== ''));
+      if (g && !changed.length) return toast('Изменений нет');
+      const body = Object.fromEntries(changed.map((k) => [k, cast(k, val(k))]));
+      if (g) body.expect_updated_at = g.updated_at; else body.kind = admKind;
+      if (await adminSave(g?.id, body)) { toast('Сохранено'); back(); }
+    });
+    $('#g-cancel')?.addEventListener('click', async () => {
+      const ok = await modal({ icon: '!', title: 'Отменить игру?', text: 'Игра пропадёт из афиши и с сайта клуба. Записи сохранятся.', buttons: [{ text: 'Назад', kind: 'ghost', value: false }, { text: 'Отменить игру', value: true }], dismiss: false });
+      if (ok === true && (await adminSave(g.id, { status: 'cancelled', expect_updated_at: g.updated_at }))) { toast('Игра отменена'); back(); }
+    });
+    $('#g-restore')?.addEventListener('click', async () => {
+      if (await adminSave(g.id, { status: 'active', expect_updated_at: g.updated_at })) { toast('Игра возвращена'); back(); }
+    });
+  },
+};
 
 const esc = (s = '') => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 function tgUser(k) {
