@@ -434,10 +434,11 @@ async function readAfisha(env) {
   return { ...state, config: { ...state.config, events: await clubEvents(env) } };
 }
 
-// Вкладка «Админ»: наши админы и менеджеры городов. Права на изменение всё равно проверяет клуб («Настройки → Бот»)
+// Вкладка «Админ»: наши админы, менеджеры городов и STAFF_IDS. Права на изменение игр всё равно проверяет клуб («Настройки → Бот»)
 async function isStaff(req, env) {
   const u = await userOf(req, env);
-  return !!u && [...allManagerIds(env), ...String(env.ADMIN_IDS || '').split(',').map((x) => x.trim())].includes(String(u.id));
+  const list = (v) => String(v || '').split(',').map((x) => x.trim()).filter(Boolean);
+  return !!u && [...allManagerIds(env), ...list(env.ADMIN_IDS), ...list(env.STAFF_IDS)].includes(String(u.id));
 }
 const GAME_FIELDS = ['kind', 'status', 'expect_updated_at', 'date', 'time', 'gather_time', 'game_type_id', 'venue_id', 'host_id', 'price_thb', 'title_ru', 'description_ru', 'place_name', 'place_address', 'place_maps_url'];
 async function adminGames(req, env, url, send) {
