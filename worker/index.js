@@ -175,7 +175,7 @@ const gpFail = (send, e) => {
 };
 // Ключ повтора: одно нажатие «Отправить» не выполняется дважды
 const idemKey = (user, v) => (/^[A-Za-z0-9-]{8,40}$/.test(String(v || '')) ? `${user.id}-${v}` : crypto.randomUUID());
-const PAY_API = { thb: 'thai_bank', rub: 'rub', usdt: 'usdt', manager: 'manager', free: 'cash' };
+const PAY_API = { thb: 'thai_bank', rub: 'rub', usdt: 'usdt', free: 'cash' };
 
 async function register(req, env, send) {
   const user = await userOf(req, env);
@@ -223,11 +223,17 @@ async function register(req, env, send) {
   const when = `${WD_FULL[d.getUTCDay()]}, ${d.getUTCDate()} ${MON[d.getUTCMonth()]}, ${ev.time}`;
   const comment = String(f.get('comment') || '').trim().slice(0, 300);
 
-  // запись в базу клуба — источник правды; без неё гостю не сообщаем, что он записан
-  let saved;
+  // Запись = присланная через бота оплата: только она попадает в базу клуба как запись.
+  // «Связаться с менеджером» — не запись, а заявка (раздел «Заявки» в админке клуба)
+  let saved = null;
   try {
-    const receipt = hasFile && method !== 'manager' ? await gpReceipt(file) : undefined;
-    saved = await gpSignup(env, initOf(req), ev.id.slice(2), { seats: n, payMethod: PAY_API[method], receipt }, idemKey(user, f.get('idem')));
+    if (method === 'manager') {
+      const about = [`Хочет записаться, но не может оплатить предложенными способами.`, `Игра: ${ev.title}, ${when}, ${ev.place}`, `Человек: ${n}`, comment].filter(Boolean).join('\n');
+      await gpRequest(env, initOf(req), { kind: 'question', text: about, contact: user.username ? '@' + user.username : '', lang: 'ru' }, idemKey(user, f.get('idem')));
+    } else {
+      const receipt = hasFile ? await gpReceipt(file) : undefined;
+      saved = await gpSignup(env, initOf(req), ev.id.slice(2), { seats: n, payMethod: PAY_API[method], receipt }, idemKey(user, f.get('idem')));
+    }
   } catch (e) { return gpFail(send, e); }
   const head = method === 'manager' ? '⚠️ <b>Нет возможности оплатить</b> — свяжитесь с клиентом' : method === 'free' ? '🎟 <b>Новая запись</b> · бесплатно' : '🧾 <b>Новая запись + чек</b>';
   const text = [
@@ -247,8 +253,8 @@ async function register(req, env, send) {
   const markup = { inline_keyboard: [...(kind === 'manager' ? [[{ text: '✅ Обработано', callback_data: 'ok:' + rid, style: 'success' }]] : []), profileRow(user)] };
 
   const logBase = { ...userLog(user), c: ev.city, e: ev.title, d: when, p: n, m: METHOD_NAME[method], s: amount, k: kind, r: rid };
-  // запись уже в базе клуба: если сообщение менеджеру не дошло, гостю всё равно отвечаем успехом (в журнале будет «не доставлено»)
-  await deliver(env, ev.city, `${text}\n\n🗂 Запись в базе клуба №${saved.signup_id}`, hasFile ? file : null, markup, logBase);
+  // в базу клуба уже отправлено: если сообщение менеджеру не дошло, гостю всё равно отвечаем успехом (в журнале будет «не доставлено»)
+  await deliver(env, ev.city, saved ? `${text}\n\n🗂 Запись в базе клуба №${saved.signup_id}` : text, hasFile ? file : null, markup, logBase);
   await rate.bump();
   await logAdd(env, { ...logBase, a: 'reg', x: comment });
 
@@ -479,10 +485,10 @@ export default {
       if (req.method === 'GET' && url.pathname === '/api/my') {
         const u = await userOf(req, env);
         if (!u) return send(401, { error: 'Откройте приложение из Telegram' });
-        // мои записи — из базы клуба (в том числе сделанные на сайте, в опросе или админом)
+        // «Вы записаны» — только если по записи есть чек (голос в опросе или запись без оплаты не считаются)
         try {
           const { games } = await gpGames(env, { initData: initOf(req) });
-          return send(200, { items: (games || []).filter((x) => x.my_signup).map((x) => ({ e: 'gp' + x.id, d: x.starts_at.slice(0, 10), k: x.my_signup.pay_method === 'manager' ? 'manager' : 'paid', c: !!x.my_signup.paid_confirmed })) });
+          return send(200, { items: (games || []).filter((x) => x.my_signup?.has_receipt).map((x) => ({ e: 'gp' + x.id, d: x.starts_at.slice(0, 10), k: 'paid', c: !!x.my_signup.paid_confirmed })) });
         } catch (e) { return gpFail(send, e); }
       }
       if (req.method === 'GET' && url.pathname === '/api/payments') {
