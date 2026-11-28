@@ -1144,6 +1144,49 @@ function styledSelect(sel) {
   });
   return label;
 }
+// Выбор времени: крупные кнопки часов и минут вместо системного барабана. Само значение хранит скрытый input
+const TIME_PRESETS = ['18:00', '18:30', '19:00', '19:10', '19:30', '20:00'];
+function styledTime(input) {
+  const btn = Object.assign(document.createElement('button'), { type: 'button', className: 'inp pick time' });
+  const title = input.closest('.field')?.querySelector('label')?.textContent.startsWith('Дата') ? 'Начало игры' : 'Время сбора';
+  const label = () => { btn.textContent = input.value || 'Выберите время'; btn.classList.toggle('unset', !input.value); };
+  input.type = 'hidden'; input.after(btn); label();
+  btn.addEventListener('click', () => {
+    haptic();
+    let [h, m] = (input.value || '19:00').split(':');
+    const mins = [...new Set([...Array.from({ length: 12 }, (_, i) => pad(i * 5)), m])].sort();
+    const cells = (kind, list) => list.map((x) => `<button class="tc" data-${kind}="${x}">${x}</button>`).join('');
+    const el = document.createElement('div');
+    el.className = 'sheet-wrap';
+    el.innerHTML = `<div class="sheet" role="dialog"><i class="grab"></i><button class="x" aria-label="Закрыть">✕</button>
+      <h3 class="d pick-h">${title}</h3>
+      <div class="tnow d"></div>
+      <div class="tchips">${cells('p', TIME_PRESETS)}</div>
+      <span class="cap">Часы</span><div class="tgrid">${cells('h', Array.from({ length: 24 }, (_, i) => pad(i)))}</div>
+      <span class="cap">Минуты</span><div class="tgrid">${cells('m', mins)}</div>
+      <button class="btn" data-ok style="margin-top:18px">Готово</button></div>`;
+    document.body.append(el);
+    requestAnimationFrame(() => el.classList.add('on'));
+    const paint = () => {
+      $('.tnow', el).textContent = `${h}:${m}`;
+      $$('[data-h]', el).forEach((b) => b.classList.toggle('on', b.dataset.h === h));
+      $$('[data-m]', el).forEach((b) => b.classList.toggle('on', b.dataset.m === m));
+      $$('[data-p]', el).forEach((b) => b.classList.toggle('on', b.dataset.p === `${h}:${m}`));
+    };
+    paint();
+    const close = (instant) => { sheetClose = null; if (instant) return el.remove(); el.classList.remove('on'); setTimeout(() => el.remove(), 300); };
+    sheetClose = close;
+    const set = () => { input.value = `${h}:${m}`; label(); };
+    el.addEventListener('click', (ev) => { if (ev.target === el) { haptic(); close(); } });
+    $('.x', el).addEventListener('click', () => { haptic(); close(); });
+    $$('.tc', el).forEach((b) => b.addEventListener('click', () => {
+      hapticSel();
+      if (b.dataset.p) [h, m] = b.dataset.p.split(':'); else if (b.dataset.h) h = b.dataset.h; else m = b.dataset.m;
+      paint();
+    }));
+    $('[data-ok]', el).addEventListener('click', () => { haptic('medium'); set(); close(); });
+  });
+}
 const AdminEvent = {
   html: (id) => {
     if (!ADM.refs) return `<p class="mute" style="padding:30px 0">${esc(ADM.err || 'Загружаем…')}</p>`;
@@ -1172,6 +1215,7 @@ const AdminEvent = {
     const before = gameForm(g);
     const val = (k) => $('#g-' + k).value.trim();
     const labels = $$('select.inp').map(styledSelect);
+    $$('input.inp[type="time"]').forEach(styledTime);
     const sync = () => {
       $$('[data-only="event"]').forEach((x) => (x.style.display = admKind === 'event' ? '' : 'none'));
       $('[data-own]').style.display = admKind === 'event' && !val('venue_id') ? '' : 'none';
