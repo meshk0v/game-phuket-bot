@@ -461,6 +461,59 @@ async function adminGames(req, env, url, send) {
   } catch (e) { return gpFail(send, e); }
 }
 
+/* ---------- Фото и видео «Как проходят игры» ---------- */
+// Список — ключ KV gallery. Старые файлы лежат на сайте (id «s-…»), загруженные из админки — в KV (media:<id>, :t превью, :p обложка видео)
+const GAL_DEFAULT = (() => {
+  const out = []; let p = 1;
+  for (let v = 1; v <= 11 || p <= 21; v++) {
+    if (v <= 11) out.push({ id: `s-v${v}`, v: true, city: 'phuket' });
+    for (let k = 0; k < 2 && p <= 21; k++, p++) out.push({ id: `s-p${p}`, v: false, city: 'phuket' });
+  }
+  return out;
+})();
+const readGallery = async (env) => (await env.CONFIG.get('gallery', 'json')) || GAL_DEFAULT;
+const IMG_TYPES = ['image/jpeg', 'image/png', 'image/webp'], VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm'];
+const MEDIA_MAX = 24 * 1024 * 1024; // предел одного значения KV — 25 МБ
+async function uploadMedia(req, env, send) {
+  if (!(await isStaff(req, env))) return send(403, { error: 'Нет доступа' });
+  if (Number(req.headers.get('Content-Length')) > MEDIA_MAX + 2e6) return send(413, { error: 'Файл больше 24 МБ' });
+  const f = await req.formData(), video = f.get('video') === '1';
+  const file = f.get('file'), thumb = f.get('thumb'), poster = f.get('poster');
+  const ok = (x, types, max) => x && typeof x === 'object' && x.size > 0 && x.size <= max && types.includes(x.type);
+  if (!ok(file, video ? VIDEO_TYPES : IMG_TYPES, video ? MEDIA_MAX : 5e6)) return send(400, { error: video ? 'Видео: MP4 или MOV до 24 МБ' : 'Фото: JPG, PNG или WebP до 5 МБ' });
+  if (!ok(thumb, IMG_TYPES, 5e5) || (video && !ok(poster, IMG_TYPES, 2e6))) return send(400, { error: 'Не удалось подготовить превью' });
+  const id = crypto.randomUUID().replace(/-/g, '');
+  const put = async (suffix, x) => env.CONFIG.put('media:' + id + suffix, await x.arrayBuffer(), { metadata: { type: x.type } });
+  await Promise.all([put('', file), put(':t', thumb), ...(video ? [put(':p', poster)] : [])]);
+  return send(200, { id, v: video });
+}
+async function editGallery(req, env, send) {
+  if (!(await isStaff(req, env))) return send(403, { error: 'Нет доступа' });
+  const b = await req.json().catch(() => ({}));
+  const remove = new Set((Array.isArray(b.remove) ? b.remove : []).map(String));
+  const st = await readState(env);
+  const add = (Array.isArray(b.add) ? b.add : []).slice(0, 30)
+    .filter((x) => /^[0-9a-f]{32}$/.test(x?.id) && st.config.cities.some((c) => c.id === x.city))
+    .map((x) => ({ id: x.id, v: !!x.v, city: x.city }));
+  const cur = await readGallery(env);
+  const next = [...add, ...cur.filter((x) => !remove.has(x.id) && !add.some((a) => a.id === x.id))];
+  if (next.length > 300) return send(400, { error: 'Слишком много файлов — удалите лишние' });
+  await env.CONFIG.put('gallery', JSON.stringify(next));
+  for (const x of cur) if (remove.has(x.id) && !x.id.startsWith('s-')) await Promise.all(['', ':t', ':p'].map((k) => env.CONFIG.delete('media:' + x.id + k)));
+  return send(200, { gallery: next });
+}
+// Отдача файла; Range нужен, чтобы видео играло на iPhone
+async function serveMedia(req, env, id, suffix) {
+  const { value, metadata } = await env.CONFIG.getWithMetadata('media:' + id + (suffix ? ':' + suffix : ''), 'arrayBuffer');
+  if (!value) return new Response('not found', { status: 404 });
+  const headers = { 'Content-Type': metadata?.type || 'application/octet-stream', 'Accept-Ranges': 'bytes', 'Cache-Control': 'public, max-age=31536000, immutable', 'X-Content-Type-Options': 'nosniff' };
+  const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.get('Range') || ''), size = value.byteLength;
+  if (!m || (!m[1] && !m[2])) return new Response(value, { headers });
+  const from = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2])), to = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+  if (from > to || from >= size) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } });
+  return new Response(value.slice(from, to + 1), { status: 206, headers: { ...headers, 'Content-Range': `bytes ${from}-${to}/${size}` } });
+}
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
@@ -473,7 +526,14 @@ export default {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
 
     try {
-      if (req.method === 'GET' && url.pathname === '/api/config') return send(200, await readAfisha(env));
+      if (req.method === 'GET' && url.pathname === '/api/config') {
+        const [afisha, gallery] = await Promise.all([readAfisha(env), readGallery(env)]);
+        return send(200, { ...afisha, gallery });
+      }
+      const media = req.method === 'GET' && /^\/api\/media\/([0-9a-f]{32})([tp])?$/.exec(url.pathname);
+      if (media) return await serveMedia(req, env, media[1], media[2]);
+      if (req.method === 'POST' && url.pathname === '/api/admin/media') return await uploadMedia(req, env, send);
+      if (req.method === 'POST' && url.pathname === '/api/admin/gallery') return await editGallery(req, env, send);
       if (req.method === 'POST' && url.pathname === '/api/me') return send(200, { isAdmin: await isStaff(req, env) });
       if (req.method === 'POST' && url.pathname === '/api/tg') {
         if (!env.TG_WEBHOOK_SECRET || req.headers.get('X-Telegram-Bot-Api-Secret-Token') !== env.TG_WEBHOOK_SECRET) return new Response('forbidden', { status: 403 });

@@ -27,8 +27,9 @@ async function getJSON(url, opts = {}, ms = 4000) {
 }
 async function loadConfig() {
   const r = await getJSON(API + '/api/config');
-  if (r.ok && r.j?.config?.cities) { CFG = r.j.config; API_OK = true; ls.set('gp_cfg', JSON.stringify(CFG)); }
+  if (r.ok && r.j?.config?.cities) { CFG = r.j.config; API_OK = true; ls.set('gp_cfg', JSON.stringify(CFG)); GAL = r.j.gallery || []; ls.set('gp_gal', JSON.stringify(GAL)); }
   else {
+    try { GAL = JSON.parse(ls.get('gp_gal')) || []; } catch {}
     try { CFG = JSON.parse(ls.get('gp_cfg')); } catch {}               // последняя удачная копия с сервера
     if (!CFG?.cities?.length) CFG = (await getJSON('default-config.json')).j || { cities: [], events: [] }; // встроенная афиша
   }
@@ -331,7 +332,7 @@ function back() {
   go(p);
 }
 function route() {
-  const SCREENS = { city: City, soon: Soon, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, custom: Custom, pay: Pay, paydone: PayDone, ask: Ask, coop: Coop, admin: Admin, adminevent: AdminEvent };
+  const SCREENS = { city: City, soon: Soon, afisha: Afisha, games: Games, order: Order, club: Club, event: EventPage, custom: Custom, pay: Pay, paydone: PayDone, ask: Ask, coop: Coop, admin: Admin, adminevent: AdminEvent, admingal: AdminGallery };
   let full = location.hash.slice(1);
   // Telegram дописывает в адрес #tgWebAppData=… — это не экран; неизвестные адреса тоже ведём на стартовый
   if (!SCREENS[full.split('/')[0]] || (full.startsWith('admin') && !IS_ADMIN)) full = home();
@@ -410,46 +411,39 @@ const Soon = {
 };
 
 let selDay = null;
-// Фото и видео с игр (Пхукет): лента маленьких превью на афише, по нажатию — полный экран со свайпом
-const GALLERY_CITY = 'phuket';
-if (!matchMedia('(pointer:coarse)').matches) document.documentElement.classList.add('desk'); // компьютер: стрелки в галерее
-// клавиши ← → листают ленту на афише (когда просмотр на весь экран закрыт — там свои)
-document.addEventListener('keydown', (e) => {
-  if ((e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') || $('.gv') || /INPUT|TEXTAREA/.test(document.activeElement?.tagName || '')) return;
-  const g = $('.gal'); if (!g) return;
-  g.scrollBy({ left: (e.key === 'ArrowRight' ? 1 : -1) * g.clientWidth * 0.8, behavior: 'smooth' });
-});
-const GALLERY = (() => {
-  const out = []; let p = 1;
-  for (let v = 1; v <= 11 || p <= 21; v++) {
-    if (v <= 11) out.push({ v: true, i: v });
-    for (let k = 0; k < 2 && p <= 21; k++) out.push({ v: false, i: p++ });
-  }
-  return out;
-})();
-const MV = 2; // версия медиа — менять при замене файлов в docs/media
-const galleryHtml = () => (city !== GALLERY_CITY ? '' : `
+// Фото и видео с игр: лента превью на афише, по нажатию — полный экран. Список приходит с сервера, меняется в «Админ»
+let GAL = [];
+const MV = 2; // версия старых файлов в docs/media — менять при их замене
+const galItems = () => GAL.filter((g) => g.city === city);
+// kind: 't' — превью, 'p' — обложка видео, '' — сам файл
+const galUrl = (g, kind = '') => {
+  if (!g.id.startsWith('s-')) return `${API}/api/media/${encodeURIComponent(g.id)}${kind}`;
+  const n = g.id.slice(2);
+  return `media/${n}${kind === 't' ? 't.webp' : kind === 'p' || !g.v ? '.webp' : '.mp4'}?v=${MV}`;
+};
+const galleryHtml = () => (!galItems().length ? '' : `
     <div class="sec"><h3 class="d">Как проходят <span class="red">игры</span></h3></div>
-    <div class="galw"><button class="gal-a l" data-ga="-1" aria-label="Назад">‹</button><button class="gal-a r" data-ga="1" aria-label="Вперёд">›</button><div class="gal">${GALLERY.map((g, k) => `<button class="gi ${g.v ? 'vid' : ''}" data-g="${k}" aria-label="${g.v ? 'Видео' : 'Фото'}"><img src="media/${g.v ? 'v' : 'p'}${g.i}t.webp?v=${MV}" alt="" loading="lazy"></button>`).join('')}</div></div>`);
+    <div class="galw"><button class="gal-a l" data-ga="-1" aria-label="Назад">‹</button><button class="gal-a r" data-ga="1" aria-label="Вперёд">›</button><div class="gal">${galItems().map((g, k) => `<button class="gi ${g.v ? 'vid' : ''}" data-g="${k}" aria-label="${g.v ? 'Видео' : 'Фото'}"><img src="${esc(galUrl(g, 't'))}" alt="" loading="lazy"></button>`).join('')}</div></div>`);
 function openGallery(start) {
   const el = document.createElement('div');
   el.className = 'gv';
-  el.innerHTML = `<div class="gv-track">${GALLERY.map((g) => `<div class="gv-s">${g.v
-    ? `<video src="media/v${g.i}.mp4?v=${MV}" poster="media/v${g.i}.webp?v=${MV}" controls playsinline preload="none"></video>`
-    : `<img src="media/p${g.i}.webp?v=${MV}" alt="" loading="lazy">`}</div>`).join('')}</div>
+  const list = galItems();
+  el.innerHTML = `<div class="gv-track">${list.map((g) => `<div class="gv-s">${g.v
+    ? `<video src="${esc(galUrl(g))}" poster="${esc(galUrl(g, 'p'))}" controls playsinline preload="none"></video>`
+    : `<img src="${esc(galUrl(g))}" alt="" loading="lazy">`}</div>`).join('')}</div>
     <button class="gv-x" aria-label="Закрыть">✕</button><div class="gv-n"></div>
     <button class="gv-a l" data-d="-1" aria-label="Назад">‹</button><button class="gv-a r" data-d="1" aria-label="Вперёд">›</button>`;
   document.body.append(el);
   const tr = $('.gv-track', el), n = $('.gv-n', el), vids = $$('video', el);
   let at = start;
-  const show = () => { $('.gv-a.l', el).disabled = at === 0; $('.gv-a.r', el).disabled = at === GALLERY.length - 1; n.textContent = `${at + 1} / ${GALLERY.length}`; vids.forEach((v) => { if (v.closest('.gv-s') !== tr.children[at]) v.pause(); }); };
+  const show = () => { $('.gv-a.l', el).disabled = at === 0; $('.gv-a.r', el).disabled = at === list.length - 1; n.textContent = `${at + 1} / ${list.length}`; vids.forEach((v) => { if (v.closest('.gv-s') !== tr.children[at]) v.pause(); }); };
   tr.scrollLeft = start * tr.clientWidth;
   show();
   const first = $('video', tr.children[start]); if (first) first.play().catch(() => {});
   tr.addEventListener('scroll', () => { const k = Math.round(tr.scrollLeft / tr.clientWidth); if (k !== at) { at = k; hapticSel(); show(); } }, { passive: true });
   requestAnimationFrame(() => el.classList.add('on'));
   // на компьютере — стрелки на экране и на клавиатуре
-  const step = (d) => { const k = Math.min(GALLERY.length - 1, Math.max(0, at + d)); tr.scrollTo({ left: k * tr.clientWidth, behavior: 'smooth' }); };
+  const step = (d) => { const k = Math.min(list.length - 1, Math.max(0, at + d)); tr.scrollTo({ left: k * tr.clientWidth, behavior: 'smooth' }); };
   $$('.gv-a', el).forEach((b) => b.addEventListener('click', () => step(+b.dataset.d)));
   const onKey = (e) => { if (e.key === 'ArrowRight') step(1); else if (e.key === 'ArrowLeft') step(-1); else if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
@@ -1109,7 +1103,8 @@ const Admin = {
           <div class="day">${esc(g.weekday || '')}, ${esc(g.date || '')} · ${esc(g.time || '')}</div><div class="ttl">${esc(gameName(g))}</div>
           <div class="meta">${esc(g.place?.name || g.venue?.name_ru || '')} · ${Number(g.price_thb)} ฿ · идут: ${Number(g.going) || 0}${g.status === 'cancelled' ? ' · <b>отменена</b>' : ''}</div><span class="go">›</span>
         </button>`).join('') : '<p class="mute" style="padding:18px 2px">Игр пока нет.</p>'}
-      <button class="btn" data-go="adminevent/new">+ Добавить игру</button>`}`;
+      <button class="btn" data-go="adminevent/new">+ Добавить игру</button>`}
+    <button class="btn ghost" style="margin-top:10px" data-go="admingal">Фото и видео</button>`;
   },
   bind: () => { if (!ADM.loading && Date.now() - ADM.at > 30e3) loadAdmin(); },
 };
@@ -1120,6 +1115,29 @@ const gameForm = (g) => ({
   place_name: g && !g.venue ? g.place?.name || '' : '', place_address: g && !g.venue ? g.place?.address || '' : '', place_maps_url: g && !g.venue ? g.place?.maps_url || '' : '',
 });
 let admKind = 'game';
+// Выбор из списка в стиле приложения вместо системного: сам <select> скрыт и хранит значение
+function styledSelect(sel) {
+  const btn = Object.assign(document.createElement('button'), { type: 'button', className: 'inp pick' });
+  const label = () => { const o = sel.options[sel.selectedIndex]; btn.textContent = o?.textContent || ''; btn.classList.toggle('unset', !sel.value); };
+  sel.hidden = true; sel.after(btn); label();
+  sel.addEventListener('change', label);
+  btn.addEventListener('click', () => {
+    haptic();
+    const el = document.createElement('div');
+    el.className = 'sheet-wrap';
+    el.innerHTML = `<div class="sheet" role="dialog"><i class="grab"></i><button class="x" aria-label="Закрыть">✕</button>
+      <h3 class="d pick-h">${esc(sel.closest('.field')?.querySelector('label')?.textContent || 'Выберите')}</h3>
+      <div class="opts">${[...sel.options].map((o, i) => `<button class="opt ${i === sel.selectedIndex ? 'on' : ''}" data-i="${i}">${esc(o.textContent)}</button>`).join('')}</div></div>`;
+    document.body.append(el);
+    requestAnimationFrame(() => el.classList.add('on'));
+    const close = (instant) => { sheetClose = null; if (instant) return el.remove(); el.classList.remove('on'); setTimeout(() => el.remove(), 300); };
+    sheetClose = close;
+    el.addEventListener('click', (ev) => { if (ev.target === el) { haptic(); close(); } });
+    $('.x', el).addEventListener('click', () => { haptic(); close(); });
+    $$('[data-i]', el).forEach((b) => b.addEventListener('click', () => { hapticSel(); sel.selectedIndex = +b.dataset.i; sel.dispatchEvent(new Event('change')); close(); }));
+  });
+  return label;
+}
 const AdminEvent = {
   html: (id) => {
     if (!ADM.refs) return `<p class="mute" style="padding:30px 0">${esc(ADM.err || 'Загружаем…')}</p>`;
@@ -1147,10 +1165,12 @@ const AdminEvent = {
     if (id !== 'new' && !g) return;
     const before = gameForm(g);
     const val = (k) => $('#g-' + k).value.trim();
+    const labels = $$('select.inp').map(styledSelect);
     const sync = () => {
       $$('[data-only="event"]').forEach((x) => (x.style.display = admKind === 'event' ? '' : 'none'));
       $('[data-own]').style.display = admKind === 'event' && !val('venue_id') ? '' : 'none';
       $('#g-venue_id').options[0].textContent = admKind === 'event' ? 'Своё место' : 'Не выбрано';
+      labels.forEach((f) => f());
     };
     sync();
     $('#g-venue_id').addEventListener('change', sync);
@@ -1180,6 +1200,102 @@ const AdminEvent = {
     $('#g-restore')?.addEventListener('click', async () => {
       if (await adminSave(g.id, { status: 'active', expect_updated_at: g.updated_at })) { toast('Игра возвращена'); back(); }
     });
+  },
+};
+
+/* ---- фото и видео ---- */
+let galCity = '', galBusy = '';
+// Картинка нужного размера: contain — вписать в w×h, cover — обрезать точно под w×h
+function toJpeg(src, sw, sh, w, h, cover, q) {
+  const k = cover ? Math.max(w / sw, h / sh) : Math.min(1, w / sw, h / sh);
+  const c = document.createElement('canvas');
+  c.width = cover ? w : Math.round(sw * k); c.height = cover ? h : Math.round(sh * k);
+  c.getContext('2d').drawImage(src, (c.width - sw * k) / 2, (c.height - sh * k) / 2, sw * k, sh * k);
+  return new Promise((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('Не удалось обработать картинку'))), 'image/jpeg', q));
+}
+function loadImage(file) {
+  return new Promise((res, rej) => {
+    const i = new Image(), t = setTimeout(() => rej(new Error('Не удалось прочитать фото')), 15000);
+    i.onload = () => { clearTimeout(t); res(i); };
+    i.onerror = () => { clearTimeout(t); rej(new Error('Этот формат фото не поддерживается')); };
+    i.src = URL.createObjectURL(file);
+  });
+}
+// Кадр из видео для обложки; если телефон не отдал кадр — тёмная заглушка
+async function videoFrame(file) {
+  const v = Object.assign(document.createElement('video'), { muted: true, playsInline: true, preload: 'auto' });
+  v.src = URL.createObjectURL(file);
+  try {
+    await new Promise((res, rej) => {
+      const t = setTimeout(rej, 8000);
+      v.onloadeddata = () => { v.currentTime = Math.min(1, (v.duration || 2) / 2); };
+      v.onseeked = () => { clearTimeout(t); res(); };
+      v.onerror = () => { clearTimeout(t); rej(); };
+      v.load();
+    });
+    if (v.videoWidth) return { src: v, w: v.videoWidth, h: v.videoHeight };
+  } catch {}
+  const c = Object.assign(document.createElement('canvas'), { width: 720, height: 1280 }), x = c.getContext('2d');
+  x.fillStyle = '#161616'; x.fillRect(0, 0, 720, 1280);
+  return { src: c, w: 720, h: 1280 };
+}
+async function uploadOne(file) {
+  const video = file.type.startsWith('video/'), fd = new FormData();
+  if (video) {
+    if (file.size > 24 * 1024 * 1024) throw new Error(`Видео «${file.name}» больше 24 МБ`);
+    const f = await videoFrame(file);
+    fd.append('video', '1'); fd.append('file', file, 'video');
+    fd.append('thumb', await toJpeg(f.src, f.w, f.h, 300, 400, true, 0.75), 't.jpg');
+    fd.append('poster', await toJpeg(f.src, f.w, f.h, 1280, 1280, false, 0.78), 'p.jpg');
+  } else {
+    const i = await loadImage(file);
+    fd.append('file', await toJpeg(i, i.naturalWidth, i.naturalHeight, 1280, 1280, false, 0.82), 'photo.jpg');
+    fd.append('thumb', await toJpeg(i, i.naturalWidth, i.naturalHeight, 300, 400, true, 0.75), 't.jpg');
+  }
+  let r, j;
+  try { r = await fetch(API + '/api/admin/media', { method: 'POST', headers: authHdr(), body: fd }); j = await r.json(); }
+  catch { throw new Error('Нет связи с сервером'); }
+  if (!r.ok) throw new Error(j?.error || 'Не удалось загрузить');
+  return j;
+}
+async function galSave(body) {
+  const r = await getJSON(API + '/api/admin/gallery', { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHdr() }, body: JSON.stringify(body) }, 20000);
+  if (!r.ok) { notify('error'); toast(r.j?.error || 'Не удалось сохранить'); return false; }
+  GAL = r.j.gallery; ls.set('gp_gal', JSON.stringify(GAL)); notify('success');
+  return true;
+}
+const AdminGallery = {
+  html: () => {
+    if (!CFG.cities.some((c) => c.id === galCity)) galCity = city || CFG.cities[0]?.id || '';
+    const list = GAL.filter((g) => g.city === galCity);
+    return `
+    <h1 class="d big" style="margin-bottom:16px">Фото<br><span class="red">и видео</span></h1>
+    <div class="seg">${CFG.cities.map((c) => `<button data-gc="${esc(c.id)}" class="${c.id === galCity ? 'on' : ''}">${esc(c.name)}</button>`).join('')}</div>
+    <label class="attach" style="margin-top:16px"><input type="file" id="g-files" accept="image/*,video/mp4,video/quicktime,video/webm" multiple ${galBusy ? 'disabled' : ''}><span class="ico">＋</span><div><b id="g-up">${galBusy || 'Добавить фото или видео'}</b><small>Можно несколько. Видео — до 24 МБ</small></div></label>
+    ${list.length ? `<div class="galgrid">${list.map((g) => `<div class="gi ${g.v ? 'vid' : ''}"><img src="${esc(galUrl(g, 't'))}" alt="" loading="lazy"><button class="gdel" data-del="${esc(g.id)}" aria-label="Удалить">✕</button></div>`).join('')}</div>` : '<p class="mute" style="padding:18px 2px">Здесь пока пусто.</p>'}`;
+  },
+  bind: () => {
+    const redraw = () => { if (cur === 'admingal') { const y = scrollY; route(); scrollTo(0, y); } };
+    $$('[data-gc]').forEach((b) => b.addEventListener('click', () => { hapticSel(); galCity = b.dataset.gc; redraw(); }));
+    $('#g-files').addEventListener('change', async (ev) => {
+      const files = [...ev.target.files].slice(0, 30), to = galCity, add = [];
+      if (!files.length || galBusy) return;
+      let err = '';
+      for (let k = 0; k < files.length; k++) {
+        galBusy = `Загружаем ${k + 1} из ${files.length}…`;
+        const t = $('#g-up'); if (t) t.textContent = galBusy;
+        try { add.push({ ...(await uploadOne(files[k])), city: to }); } catch (e) { err = e.message; }
+      }
+      // первый выбранный окажется первым в ленте
+      const ok = add.length ? await galSave({ add }) : false;
+      galBusy = ''; redraw();
+      if (err) { notify('error'); toast(err); } else if (ok) toast('Добавлено');
+    });
+    $$('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+      haptic();
+      const yes = await modal({ icon: '!', title: 'Удалить?', text: 'Файл исчезнет из ленты у всех.', buttons: [{ text: 'Назад', kind: 'ghost', value: false }, { text: 'Удалить', value: true }], dismiss: false });
+      if (yes === true && (await galSave({ remove: [b.dataset.del] }))) redraw();
+    }));
   },
 };
 
