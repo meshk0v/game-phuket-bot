@@ -972,8 +972,8 @@ const Order = {
     paint();
     g.addEventListener('input', () => { order.guests = +g.value; paint(); if (g.value % 5 === 0) hapticSel(); });
     $$('[data-l]').forEach((b) => b.addEventListener('click', () => { hapticSel(); order.lang = b.dataset.l; $$('[data-l]').forEach((x) => x.classList.toggle('on', x === b)); }));
-    $('#odate').min = new Date().toISOString().slice(0, 10);
     [['odate', 'date'], ['ocontact', 'contact'], ['onote', 'note']].forEach(([id, k]) => $('#' + id).addEventListener('input', (e) => (order[k] = e.target.value)));
+    styledDate($('#odate'), { title: 'Дата мероприятия', tz: cityById(city)?.tz ?? 7, optional: true });
     mainButton('Отправить заявку', () => {
       if (!order.fmts.size) { notify('error'); return toast('Выберите хотя бы одну игру'); }
       if (!$('#ocontact').value.trim()) { notify('error'); $('#ocontact').focus(); return toast('Оставьте контакт для связи'); }
@@ -997,7 +997,7 @@ const Custom = {
     <input class="inp" id="fn" placeholder="Имя" value="${esc(tgUser('name'))}">
     <input class="inp" id="fc" placeholder="Телефон или @username" value="${esc(tgUser('contact'))}"></div>`,
   bind: () => {
-    $('#cu-date').min = new Date().toISOString().slice(0, 10);
+    styledDate($('#cu-date'), { title: 'Дата мероприятия', tz: cityById(city)?.tz ?? 7, optional: true });
     mainButton('Отправить менеджеру', () => {
       const desc = $('#cu-desc').value.trim(), contact = $('#fc').value.trim();
       if (!desc) { notify('error'); $('#cu-desc').focus(); return toast('Опишите мероприятие'); }
@@ -1187,32 +1187,32 @@ function styledTime(input) {
     $('[data-ok]', el).addEventListener('click', () => { haptic('medium'); set(); close(); });
   });
 }
-// Выбор даты: календарь в стиле приложения. Даты — по Пхукету, прошедшие выбрать нельзя
+// Выбор даты: календарь в стиле приложения. «Сегодня» — по часовому поясу города, прошедшие дни выбрать нельзя
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
-function styledDate(input) {
+function styledDate(input, { title = 'Дата игры', tz = 7, optional = false } = {}) {
   const btn = Object.assign(document.createElement('button'), { type: 'button', className: 'inp pick date' });
   const iso = (d) => d.toISOString().slice(0, 10), parse = (v) => new Date(v + 'T00:00:00Z');
   const full = (v) => { const d = parse(v); return `${fmtDate({ date: d })} ${d.getUTCFullYear()}, ${WD_FULL[d.getUTCDay()].toLowerCase()}`; };
-  const label = () => { btn.textContent = input.value ? full(input.value) : 'Выберите дату'; btn.classList.toggle('unset', !input.value); };
+  const label = () => { btn.textContent = input.value ? full(input.value) : optional ? title : 'Выберите дату'; btn.classList.toggle('unset', !input.value); };
   input.type = 'hidden'; input.after(btn); label();
   btn.addEventListener('click', () => {
     haptic();
-    const today = iso(new Date(Date.now() + 7 * 3600e3)), tomorrow = iso(new Date(Date.now() + 31 * 3600e3));
+    const today = iso(new Date(Date.now() + tz * 3600e3)), tomorrow = iso(new Date(Date.now() + (tz + 24) * 3600e3));
     const first = parse(input.value && input.value > today ? input.value : today);
     let y = first.getUTCFullYear(), m = first.getUTCMonth();
     const el = document.createElement('div');
     el.className = 'sheet-wrap';
     el.innerHTML = `<div class="sheet" role="dialog"><i class="grab"></i><button class="x" aria-label="Закрыть">✕</button>
-      <h3 class="d pick-h">Дата игры</h3>
+      <h3 class="d pick-h">${title}</h3>
       <div class="tchips two"><button class="tc" data-day="${today}">Сегодня</button><button class="tc" data-day="${tomorrow}">Завтра</button></div>
       <div class="cal-top"><button class="tc" data-mon="-1" aria-label="Предыдущий месяц">‹</button><b class="d"></b><button class="tc" data-mon="1" aria-label="Следующий месяц">›</button></div>
       <div class="cal cal-wd">${['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'].map((w) => `<span>${w}</span>`).join('')}</div>
-      <div class="cal" data-grid></div></div>`;
+      <div class="cal" data-grid></div>${optional && input.value ? '<button class="btn ghost" data-clear style="margin-top:14px">Без даты</button>' : ''}</div>`;
     document.body.append(el);
     requestAnimationFrame(() => el.classList.add('on'));
     const close = (instant) => { sheetClose = null; if (instant) return el.remove(); el.classList.remove('on'); setTimeout(() => el.remove(), 300); };
     sheetClose = close;
-    const choose = (v) => { hapticSel(); input.value = v; label(); close(); };
+    const choose = (v) => { hapticSel(); input.value = v; label(); input.dispatchEvent(new Event('input')); close(); };
     const paint = () => {
       $('.cal-top b', el).textContent = `${MONTHS[m]} ${y}`;
       $('[data-mon="-1"]', el).disabled = `${y}-${pad(m + 1)}` <= today.slice(0, 7);
@@ -1227,6 +1227,7 @@ function styledDate(input) {
     el.addEventListener('click', (ev) => { if (ev.target === el) { haptic(); close(); } });
     $('.x', el).addEventListener('click', () => { haptic(); close(); });
     $$('[data-day]', el).forEach((b) => b.addEventListener('click', () => choose(b.dataset.day)));
+    $('[data-clear]', el)?.addEventListener('click', () => choose(''));
     $$('[data-mon]', el).forEach((b) => b.addEventListener('click', () => {
       hapticSel(); const d = new Date(Date.UTC(y, m + +b.dataset.mon, 1)); y = d.getUTCFullYear(); m = d.getUTCMonth(); paint();
     }));
@@ -1261,7 +1262,7 @@ const AdminEvent = {
     const val = (k) => $('#g-' + k).value.trim();
     const labels = $$('select.inp').map(styledSelect);
     $$('input.inp[type="time"]').forEach(styledTime);
-    $$('input.inp[type="date"]').forEach(styledDate);
+    $$('input.inp[type="date"]').forEach((i) => styledDate(i));
     const sync = () => {
       $$('[data-only="event"]').forEach((x) => (x.style.display = admKind === 'event' ? '' : 'none'));
       $('[data-own]').style.display = admKind === 'event' && !val('venue_id') ? '' : 'none';
