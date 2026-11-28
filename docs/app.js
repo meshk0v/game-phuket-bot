@@ -1187,6 +1187,51 @@ function styledTime(input) {
     $('[data-ok]', el).addEventListener('click', () => { haptic('medium'); set(); close(); });
   });
 }
+// Выбор даты: календарь в стиле приложения. Даты — по Пхукету, прошедшие выбрать нельзя
+const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+function styledDate(input) {
+  const btn = Object.assign(document.createElement('button'), { type: 'button', className: 'inp pick date' });
+  const iso = (d) => d.toISOString().slice(0, 10), parse = (v) => new Date(v + 'T00:00:00Z');
+  const full = (v) => { const d = parse(v); return `${fmtDate({ date: d })} ${d.getUTCFullYear()}, ${WD_FULL[d.getUTCDay()].toLowerCase()}`; };
+  const label = () => { btn.textContent = input.value ? full(input.value) : 'Выберите дату'; btn.classList.toggle('unset', !input.value); };
+  input.type = 'hidden'; input.after(btn); label();
+  btn.addEventListener('click', () => {
+    haptic();
+    const today = iso(new Date(Date.now() + 7 * 3600e3)), tomorrow = iso(new Date(Date.now() + 31 * 3600e3));
+    const first = parse(input.value && input.value > today ? input.value : today);
+    let y = first.getUTCFullYear(), m = first.getUTCMonth();
+    const el = document.createElement('div');
+    el.className = 'sheet-wrap';
+    el.innerHTML = `<div class="sheet" role="dialog"><i class="grab"></i><button class="x" aria-label="Закрыть">✕</button>
+      <h3 class="d pick-h">Дата игры</h3>
+      <div class="tchips two"><button class="tc" data-day="${today}">Сегодня</button><button class="tc" data-day="${tomorrow}">Завтра</button></div>
+      <div class="cal-top"><button class="tc" data-mon="-1" aria-label="Предыдущий месяц">‹</button><b class="d"></b><button class="tc" data-mon="1" aria-label="Следующий месяц">›</button></div>
+      <div class="cal cal-wd">${['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'].map((w) => `<span>${w}</span>`).join('')}</div>
+      <div class="cal" data-grid></div></div>`;
+    document.body.append(el);
+    requestAnimationFrame(() => el.classList.add('on'));
+    const close = (instant) => { sheetClose = null; if (instant) return el.remove(); el.classList.remove('on'); setTimeout(() => el.remove(), 300); };
+    sheetClose = close;
+    const choose = (v) => { hapticSel(); input.value = v; label(); close(); };
+    const paint = () => {
+      $('.cal-top b', el).textContent = `${MONTHS[m]} ${y}`;
+      $('[data-mon="-1"]', el).disabled = `${y}-${pad(m + 1)}` <= today.slice(0, 7);
+      const shift = (new Date(Date.UTC(y, m, 1)).getUTCDay() + 6) % 7, len = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+      $('[data-grid]', el).innerHTML = '<span></span>'.repeat(shift) + Array.from({ length: len }, (_, i) => {
+        const v = `${y}-${pad(m + 1)}-${pad(i + 1)}`;
+        return `<button class="tc ${v === input.value ? 'on' : ''} ${v === today ? 'today' : ''}" data-d="${v}" ${v < today ? 'disabled' : ''}>${i + 1}</button>`;
+      }).join('');
+      $$('[data-d]', el).forEach((b) => b.addEventListener('click', () => choose(b.dataset.d)));
+    };
+    paint();
+    el.addEventListener('click', (ev) => { if (ev.target === el) { haptic(); close(); } });
+    $('.x', el).addEventListener('click', () => { haptic(); close(); });
+    $$('[data-day]', el).forEach((b) => b.addEventListener('click', () => choose(b.dataset.day)));
+    $$('[data-mon]', el).forEach((b) => b.addEventListener('click', () => {
+      hapticSel(); const d = new Date(Date.UTC(y, m + +b.dataset.mon, 1)); y = d.getUTCFullYear(); m = d.getUTCMonth(); paint();
+    }));
+  });
+}
 const AdminEvent = {
   html: (id) => {
     if (!ADM.refs) return `<p class="mute" style="padding:30px 0">${esc(ADM.err || 'Загружаем…')}</p>`;
@@ -1216,6 +1261,7 @@ const AdminEvent = {
     const val = (k) => $('#g-' + k).value.trim();
     const labels = $$('select.inp').map(styledSelect);
     $$('input.inp[type="time"]').forEach(styledTime);
+    $$('input.inp[type="date"]').forEach(styledDate);
     const sync = () => {
       $$('[data-only="event"]').forEach((x) => (x.style.display = admKind === 'event' ? '' : 'none'));
       $('[data-own]').style.display = admKind === 'event' && !val('venue_id') ? '' : 'none';
